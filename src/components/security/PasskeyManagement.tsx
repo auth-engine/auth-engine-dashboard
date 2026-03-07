@@ -47,15 +47,20 @@ export default function PasskeyManagement() {
         mutationFn: async (deviceName: string) => {
             // 1. Get options
             const { data: beginData } = await apiClient.post("/auth/webauthn/register/begin");
-
             // 2. Call browser API
             const attestation = await startRegistration({
                 optionsJSON: beginData.options,
             });
+            const credentialPayload = {
+                id: attestation.id,
+                rawId: attestation.rawId,
+                type: attestation.type,
+                response: attestation.response,
+            };
 
             // 3. Complete registration
             await apiClient.post("/auth/webauthn/register/complete", {
-                credential: attestation,
+                credential: credentialPayload,
                 device_name: deviceName,
             });
         },

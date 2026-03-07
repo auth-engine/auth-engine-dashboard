@@ -1,6 +1,8 @@
 "use client"
 import { useState } from "react";
 import { useAuthStore } from "@/stores/auth-store";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api-client";
 import { format, parseISO, isValid } from "date-fns";
 import {
     ShieldAlert,
@@ -14,7 +16,12 @@ import {
     Briefcase,
     Globe,
     Pencil,
-    Settings
+    Settings,
+    Link2,
+    Lock,
+    Send,
+    Loader2,
+    ExternalLink
 } from "lucide-react";
 
 import {
@@ -30,19 +37,83 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { EditProfileForm } from "./edit-profile-form";
+import { toast } from "sonner";
+import { FaGoogle, FaGithub, FaMicrosoft } from "react-icons/fa";
+
+const PROVIDER_ICONS: Record<string, any> = {
+    google: FaGoogle,
+    github: FaGithub,
+    microsoft: FaMicrosoft,
+};
+
+const PROVIDER_COLORS: Record<string, string> = {
+    google: "text-red-500",
+    github: "text-foreground",
+    microsoft: "text-blue-600",
+};
 
 export default function MeProfilePage() {
     const { user } = useAuthStore();
+    const queryClient = useQueryClient();
     const [isEditOpen, setIsEditOpen] = useState(false);
+    const [isSetPasswordOpen, setIsSetPasswordOpen] = useState(false);
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
 
-    if (!user) return null; // AuthGuard handles the redirect
+    // Linked OAuth Accounts
+    const { data: linkedAccounts, isLoading: isLoadingAccounts } = useQuery({
+        queryKey: ["linkedOAuthAccounts"],
+        queryFn: async () => {
+            const { data } = await apiClient.get("/auth/oauth/accounts");
+            return data;
+        },
+        enabled: !!user,
+    });
+
+    // Check if user has password strategy
+    const hasPassword = user?.auth_strategies?.includes("password") || user?.auth_strategies?.includes("local");
+
+    // Set password mutation
+    const setPasswordMutation = useMutation({
+        mutationFn: async (password: string) => {
+            await apiClient.post("/auth/set-password", { password });
+        },
+        onSuccess: () => {
+            toast.success("Password set successfully!");
+            setIsSetPasswordOpen(false);
+            setNewPassword("");
+            setConfirmPassword("");
+            // Refresh user data
+            queryClient.invalidateQueries({ queryKey: ["verifyUser"] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to set password");
+        },
+    });
+
+    // Resend verification email
+    const resendVerificationMutation = useMutation({
+        mutationFn: async () => {
+            await apiClient.post("/auth/request-token", { scope: "email_verification" });
+        },
+        onSuccess: () => {
+            toast.success("Verification email sent! Check your inbox.");
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to send verification email");
+        },
+    });
+
+    if (!user) return null;
 
     const formatDate = (dateString?: string | null) => {
         if (!dateString) return "Never";
@@ -54,6 +125,15 @@ export default function MeProfilePage() {
         if (!user.first_name && !user.last_name) return user.username?.[0]?.toUpperCase() || "U";
         return `${user.first_name?.[0] || ""}${user.last_name?.[0] || ""}`.toUpperCase();
     };
+
+    const handleLinkProvider = (provider: string) => {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+        window.location.href = `${baseUrl}/auth/oauth/${provider}/link`;
+    };
+
+    const linkableProviders = ["google", "github", "microsoft"];
+    const linkedProviderNames = linkedAccounts?.map((a: any) => a.provider) || [];
+    const unlinkableProviders = linkableProviders.filter(p => !linkedProviderNames.includes(p));
 
     return (
         <div className="mx-auto max-w-5xl space-y-8 pb-10">
@@ -144,9 +224,25 @@ export default function MeProfilePage() {
                                             <ShieldCheck className="h-3 w-3" /> Verified
                                         </Badge>
                                     ) : (
-                                        <Badge variant="outline" className="w-fit bg-amber-500/10 text-amber-600 border-amber-500/20 flex items-center gap-1 font-normal">
-                                            <ShieldAlert className="h-3 w-3" /> Action Required
-                                        </Badge>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="w-fit bg-amber-500/10 text-amber-600 border-amber-500/20 flex items-center gap-1 font-normal">
+                                                <ShieldAlert className="h-3 w-3" /> Action Required
+                                            </Badge>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 text-xs text-primary"
+                                                onClick={() => resendVerificationMutation.mutate()}
+                                                disabled={resendVerificationMutation.isPending}
+                                            >
+                                                {resendVerificationMutation.isPending ? (
+                                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                                ) : (
+                                                    <Send className="h-3 w-3 mr-1" />
+                                                )}
+                                                Resend
+                                            </Button>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -218,6 +314,65 @@ export default function MeProfilePage() {
                             )}
                         </div>
 
+                        {/* Set Password for OAuth users */}
+                        {!hasPassword && (
+                            <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                                <div className="space-y-0.5">
+                                    <p className="text-sm font-semibold">Set Password</p>
+                                    <p className="text-xs text-muted-foreground">Add a password to your account</p>
+                                </div>
+                                <Dialog open={isSetPasswordOpen} onOpenChange={setIsSetPasswordOpen}>
+                                    <DialogTrigger asChild>
+                                        <Button variant="outline" size="sm" className="h-7 text-xs">
+                                            <Lock className="mr-1 h-3 w-3" /> Set Password
+                                        </Button>
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                        <DialogHeader>
+                                            <DialogTitle>Set Account Password</DialogTitle>
+                                            <DialogDescription>
+                                                Add a password to your account to enable email/password login alongside your social logins.
+                                            </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-4 py-4">
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium">New Password</label>
+                                                <Input
+                                                    type="password"
+                                                    placeholder="Enter a strong password"
+                                                    value={newPassword}
+                                                    onChange={(e) => setNewPassword(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium">Confirm Password</label>
+                                                <Input
+                                                    type="password"
+                                                    placeholder="Confirm your password"
+                                                    value={confirmPassword}
+                                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <DialogFooter>
+                                            <Button
+                                                onClick={() => setPasswordMutation.mutate(newPassword)}
+                                                disabled={
+                                                    setPasswordMutation.isPending ||
+                                                    !newPassword ||
+                                                    newPassword.length < 8 ||
+                                                    newPassword !== confirmPassword
+                                                }
+                                            >
+                                                {setPasswordMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                                Set Password
+                                            </Button>
+                                        </DialogFooter>
+                                    </DialogContent>
+                                </Dialog>
+                            </div>
+                        )}
+
                         <div className="space-y-3">
                             <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
                                 <ShieldCheck className="h-4 w-4 text-primary" />
@@ -234,8 +389,90 @@ export default function MeProfilePage() {
                     </CardContent>
                 </Card>
 
-                {/* Roles & Tenants */}
+                {/* Linked OAuth Accounts */}
                 <Card className="lg:col-span-2 shadow-sm border-muted/50 overflow-hidden">
+                    <CardHeader className="bg-muted/30 pb-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Link2 className="h-5 w-5 text-primary" />
+                                <CardTitle>Linked Accounts</CardTitle>
+                            </div>
+                        </div>
+                        <CardDescription>
+                            Social accounts linked to your identity for quick sign-in
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-6 space-y-4">
+                        {isLoadingAccounts ? (
+                            <div className="flex justify-center py-6">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                            </div>
+                        ) : (
+                            <>
+                                {/* Linked accounts list */}
+                                {linkedAccounts && linkedAccounts.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {linkedAccounts.map((account: any) => {
+                                            const Icon = PROVIDER_ICONS[account.provider] || Globe;
+                                            const colorClass = PROVIDER_COLORS[account.provider] || "text-muted-foreground";
+                                            return (
+                                                <div
+                                                    key={account.provider}
+                                                    className="flex items-center justify-between p-3 rounded-xl border border-muted bg-muted/10"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2 rounded-lg bg-background border">
+                                                            <Icon className={`h-5 w-5 ${colorClass}`} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-semibold capitalize">{account.provider}</p>
+                                                            <p className="text-[10px] text-muted-foreground">{account.email || account.provider_user_id}</p>
+                                                        </div>
+                                                    </div>
+                                                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
+                                                        Connected
+                                                    </Badge>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground italic text-center py-4">
+                                        No linked social accounts yet.
+                                    </p>
+                                )}
+
+                                {/* Link new providers */}
+                                {unlinkableProviders.length > 0 && (
+                                    <div className="pt-2">
+                                        <p className="text-xs font-semibold text-muted-foreground uppercase mb-3">Link another account</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {unlinkableProviders.map((provider) => {
+                                                const Icon = PROVIDER_ICONS[provider] || Globe;
+                                                const colorClass = PROVIDER_COLORS[provider] || "text-muted-foreground";
+                                                return (
+                                                    <Button
+                                                        key={provider}
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="gap-2 capitalize"
+                                                        onClick={() => handleLinkProvider(provider)}
+                                                    >
+                                                        <Icon className={`h-4 w-4 ${colorClass}`} />
+                                                        Link {provider}
+                                                    </Button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Roles & Tenants */}
+                <Card className="lg:col-span-3 shadow-sm border-muted/50 overflow-hidden">
                     <CardHeader className="bg-muted/30 pb-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">

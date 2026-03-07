@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import {
     Users2,
@@ -11,7 +11,9 @@ import {
     Filter,
     UserCheck,
     UserX,
-    Shield
+    Shield,
+    Eye,
+    Trash2
 } from "lucide-react";
 
 import {
@@ -41,8 +43,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function PlatformUsersPage() {
+    const router = useRouter();
+    const queryClient = useQueryClient();
+    const [searchTerm, setSearchTerm] = useState("");
+
     // 1. Fetch Users
     const { data: users, isLoading } = useQuery({
         queryKey: ["allUsers"],
@@ -51,6 +59,40 @@ export default function PlatformUsersPage() {
             return data;
         },
     });
+
+    // Update user status
+    const updateStatusMutation = useMutation({
+        mutationFn: async ({ userId, status }: { userId: string; status: string }) => {
+            await apiClient.patch(`/platform/users/${userId}`, { status });
+        },
+        onSuccess: () => {
+            toast.success("User status updated");
+            queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to update status");
+        },
+    });
+
+    // Delete user
+    const deleteMutation = useMutation({
+        mutationFn: async (userId: string) => {
+            await apiClient.delete(`/platform/users/${userId}`);
+        },
+        onSuccess: () => {
+            toast.success("User deleted");
+            queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to delete user");
+        },
+    });
+
+    const filteredUsers = users?.filter((u: any) =>
+        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.username?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
         <div className="space-y-6">
@@ -64,7 +106,12 @@ export default function PlatformUsersPage() {
             <div className="flex items-center gap-4">
                 <div className="relative flex-1 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search users by email or ID..." className="pl-10" />
+                    <Input
+                        placeholder="Search users by email or ID..."
+                        className="pl-10"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                 </div>
                 <Button variant="outline" size="icon" className="shrink-0">
                     <Filter className="h-4 w-4" />
@@ -88,8 +135,12 @@ export default function PlatformUsersPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {users?.map((u: any) => (
-                                <TableRow key={u.id} className="group transition-colors">
+                            {filteredUsers?.map((u: any) => (
+                                <TableRow
+                                    key={u.id}
+                                    className="group transition-colors cursor-pointer"
+                                    onClick={() => router.push(`/platform/users/${u.id}`)}
+                                >
                                     <TableCell>
                                         <div className="flex items-center gap-3">
                                             <div className="h-9 w-9 rounded-full bg-foreground/10 flex items-center justify-center text-foreground font-bold border border-foreground/5 shadow-inner">
@@ -120,7 +171,7 @@ export default function PlatformUsersPage() {
                                             </Badge>
                                         )}
                                     </TableCell>
-                                    <TableCell className="text-right">
+                                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -129,21 +180,53 @@ export default function PlatformUsersPage() {
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
                                                 <DropdownMenuLabel>Account Control</DropdownMenuLabel>
+                                                <DropdownMenuItem
+                                                    className="cursor-pointer"
+                                                    onClick={() => router.push(`/platform/users/${u.id}`)}
+                                                >
+                                                    <Eye className="h-4 w-4 mr-2" /> View Details
+                                                </DropdownMenuItem>
                                                 <DropdownMenuItem className="cursor-pointer">
                                                     <Shield className="h-4 w-4 mr-2" /> Global Roles
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem className="cursor-pointer">
-                                                    <UserCheck className="h-4 w-4 mr-2" /> Active Sessions
-                                                </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
-                                                <DropdownMenuItem className="text-destructive cursor-pointer">
-                                                    <UserX className="h-4 w-4 mr-2" /> Suspend Account
+                                                {u.status === "ACTIVE" ? (
+                                                    <DropdownMenuItem
+                                                        className="text-destructive cursor-pointer"
+                                                        onClick={() => updateStatusMutation.mutate({ userId: u.id, status: "SUSPENDED" })}
+                                                    >
+                                                        <UserX className="h-4 w-4 mr-2" /> Suspend Account
+                                                    </DropdownMenuItem>
+                                                ) : (
+                                                    <DropdownMenuItem
+                                                        className="cursor-pointer"
+                                                        onClick={() => updateStatusMutation.mutate({ userId: u.id, status: "ACTIVE" })}
+                                                    >
+                                                        <UserCheck className="h-4 w-4 mr-2" /> Activate Account
+                                                    </DropdownMenuItem>
+                                                )}
+                                                <DropdownMenuItem
+                                                    className="text-destructive cursor-pointer"
+                                                    onClick={() => {
+                                                        if (confirm(`Delete user ${u.email}? This cannot be undone.`)) {
+                                                            deleteMutation.mutate(u.id);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-4 w-4 mr-2" /> Delete User
                                                 </DropdownMenuItem>
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </TableCell>
                                 </TableRow>
                             ))}
+                            {(!filteredUsers || filteredUsers.length === 0) && (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                                        No users found.
+                                    </TableCell>
+                                </TableRow>
+                            )}
                         </TableBody>
                     </Table>
                 )}

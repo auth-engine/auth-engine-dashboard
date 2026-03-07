@@ -15,7 +15,8 @@ import {
     MoreVertical,
     PlusCircle,
     AlertTriangle,
-    Settings
+    Settings,
+    Pencil
 } from "lucide-react";
 
 import {
@@ -58,9 +59,18 @@ export default function TenantSocialPage() {
     const queryClient = useQueryClient();
     const { activeTenantId } = useAuthStore();
     const [isAdding, setIsAdding] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingProvider, setEditingProvider] = useState<any>(null);
 
     const [newProvider, setNewProvider] = useState<any>({
         provider: "google",
+        client_id: "",
+        client_secret: "",
+        redirect_uri: "",
+        oidc_discovery_url: ""
+    });
+
+    const [editForm, setEditForm] = useState<any>({
         client_id: "",
         client_secret: "",
         redirect_uri: "",
@@ -85,6 +95,7 @@ export default function TenantSocialPage() {
         onSuccess: () => {
             toast.success("Social provider added");
             setIsAdding(false);
+            setNewProvider({ provider: "google", client_id: "", client_secret: "", redirect_uri: "", oidc_discovery_url: "" });
             queryClient.invalidateQueries({ queryKey: ["tenantSocialProviders", activeTenantId] });
         },
         onError: (error: any) => {
@@ -92,7 +103,23 @@ export default function TenantSocialPage() {
         }
     });
 
-    // 3. Delete Provider
+    // 3. Update Provider (PUT)
+    const updateMutation = useMutation({
+        mutationFn: async ({ provider, payload }: { provider: string; payload: any }) => {
+            await apiClient.put(`/tenants/${activeTenantId}/social-providers/${provider}`, payload);
+        },
+        onSuccess: () => {
+            toast.success("Social provider updated");
+            setIsEditing(false);
+            setEditingProvider(null);
+            queryClient.invalidateQueries({ queryKey: ["tenantSocialProviders", activeTenantId] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to update social provider");
+        }
+    });
+
+    // 4. Delete Provider
     const deleteMutation = useMutation({
         mutationFn: async (provider: string) => {
             await apiClient.delete(`/tenants/${activeTenantId}/social-providers/${provider}`);
@@ -106,7 +133,7 @@ export default function TenantSocialPage() {
         }
     });
 
-    // 4. Toggle Provider
+    // 5. Toggle Provider
     const toggleMutation = useMutation({
         mutationFn: async ({ provider, is_active }: { provider: string, is_active: boolean }) => {
             await apiClient.patch(`/tenants/${activeTenantId}/social-providers/${provider}/toggle`, { is_active });
@@ -118,6 +145,17 @@ export default function TenantSocialPage() {
             toast.error("Failed to toggle provider");
         }
     });
+
+    const openEditDialog = (p: any) => {
+        setEditingProvider(p);
+        setEditForm({
+            client_id: p.client_id || "",
+            client_secret: "",
+            redirect_uri: p.redirect_uri || "",
+            oidc_discovery_url: p.oidc_discovery_url || ""
+        });
+        setIsEditing(true);
+    };
 
     if (!activeTenantId) return <div className="p-8 text-center">Select an organization.</div>;
 
@@ -131,6 +169,7 @@ export default function TenantSocialPage() {
                     </p>
                 </div>
 
+                {/* Add Provider Dialog */}
                 <Dialog open={isAdding} onOpenChange={setIsAdding}>
                     <DialogTrigger asChild>
                         <Button className="rounded-xl shadow-lg shadow-primary/20">
@@ -196,7 +235,7 @@ export default function TenantSocialPage() {
                                     onChange={(e) => setNewProvider({ ...newProvider, redirect_uri: e.target.value })}
                                 />
                                 <p className="text-[10px] text-muted-foreground">
-                                    This must match exactly the URI registered in your provider's console.
+                                    This must match exactly the URI registered in your provider&apos;s console.
                                 </p>
                             </div>
                         </div>
@@ -214,6 +253,80 @@ export default function TenantSocialPage() {
                 </Dialog>
             </div>
 
+            {/* Edit Provider Dialog */}
+            <Dialog open={isEditing} onOpenChange={setIsEditing}>
+                <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Edit {editingProvider?.provider ? editingProvider.provider.charAt(0).toUpperCase() + editingProvider.provider.slice(1) : ""} Provider
+                        </DialogTitle>
+                        <DialogDescription>
+                            Update the credentials and configuration for this social provider.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-6 py-4">
+                        {editingProvider?.provider === "authengine" && (
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Discovery URL</label>
+                                <Input
+                                    placeholder="https://auth.example.com/.well-known/openid-configuration"
+                                    value={editForm.oidc_discovery_url}
+                                    onChange={(e) => setEditForm({ ...editForm, oidc_discovery_url: e.target.value })}
+                                />
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Client ID</label>
+                            <Input
+                                placeholder="Enter your Client ID"
+                                value={editForm.client_id}
+                                onChange={(e) => setEditForm({ ...editForm, client_id: e.target.value })}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Client Secret</label>
+                            <Input
+                                type="password"
+                                placeholder="Leave blank to keep current secret"
+                                value={editForm.client_secret}
+                                onChange={(e) => setEditForm({ ...editForm, client_secret: e.target.value })}
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                                Leave blank to keep the existing secret unchanged.
+                            </p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Redirect URI</label>
+                            <Input
+                                placeholder="https://api.yourdomain.com/v1/auth/oauth/callback"
+                                value={editForm.redirect_uri}
+                                onChange={(e) => setEditForm({ ...editForm, redirect_uri: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
+                        <Button
+                            onClick={() => {
+                                if (editingProvider) {
+                                    const payload = { ...editForm };
+                                    // Remove empty client_secret so backend keeps current
+                                    if (!payload.client_secret) delete payload.client_secret;
+                                    updateMutation.mutate({ provider: editingProvider.provider, payload });
+                                }
+                            }}
+                            disabled={updateMutation.isPending || !editForm.client_id}
+                        >
+                            {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save Changes
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <div className="grid gap-6">
                 {isLoading ? (
                     <div className="flex justify-center py-20">
@@ -228,7 +341,7 @@ export default function TenantSocialPage() {
                             <div>
                                 <h3 className="text-lg font-semibold">No custom providers configured</h3>
                                 <p className="text-sm text-muted-foreground max-w-sm mx-auto mt-1">
-                                    Users will use the platform's default social login credentials unless you configure your own here.
+                                    Users will use the platform&apos;s default social login credentials unless you configure your own here.
                                 </p>
                             </div>
                             <Button variant="outline" onClick={() => setIsAdding(true)}>
@@ -269,8 +382,11 @@ export default function TenantSocialPage() {
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem className="cursor-pointer">
-                                                        <Settings className="h-4 w-4 mr-2" /> Edit Configuration
+                                                    <DropdownMenuItem
+                                                        className="cursor-pointer"
+                                                        onClick={() => openEditDialog(p)}
+                                                    >
+                                                        <Pencil className="h-4 w-4 mr-2" /> Edit Configuration
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem
                                                         className="text-destructive cursor-pointer"
@@ -319,7 +435,7 @@ export default function TenantSocialPage() {
                 <div className="space-y-1">
                     <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">Security Warning</p>
                     <p className="text-xs text-muted-foreground">
-                        Ensure your redirect URIs are secured and match your provider's console exactly.
+                        Ensure your redirect URIs are secured and match your provider&apos;s console exactly.
                         AuthEngine encrypts your Client IDs and Secrets at rest using platform-level keys.
                     </p>
                 </div>

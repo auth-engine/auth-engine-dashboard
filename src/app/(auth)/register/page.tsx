@@ -36,8 +36,6 @@ import {
 const registerSchema = z.object({
     email: z.string().email({ message: "Please enter a valid email address." }),
     password: z.string().min(8, { message: "Password must be at least 8 characters long." }),
-    firstName: z.string().optional(),
-    lastName: z.string().optional(),
 });
 
 export default function RegisterPage() {
@@ -49,8 +47,6 @@ export default function RegisterPage() {
         defaultValues: {
             email: "",
             password: "",
-            firstName: "",
-            lastName: "",
         },
     });
 
@@ -59,9 +55,11 @@ export default function RegisterPage() {
             // Step 1: Register user
             await apiClient.post("/auth/register", {
                 email: values.email,
+                phone_number: "+00000000000",
+                username: values.email.split("@")[0],
                 password: values.password,
-                first_name: values.firstName,
-                last_name: values.lastName,
+                first_name: "User",
+                last_name: "Name",
                 auth_strategy: "email_password",
             });
 
@@ -103,34 +101,6 @@ export default function RegisterPage() {
                 <CardContent>
                     <Form {...form}>
                         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormField
-                                    control={form.control}
-                                    name="firstName"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>First Name (Optional)</FormLabel>
-                                            <FormControl>
-                                                <Input placeholder="John" {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="lastName"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Last Name (Optional)</FormLabel>
-                                            <FormControl>
-                                                <Input placeholder="Doe" {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
                             <FormField
                                 control={form.control}
                                 name="email"
@@ -182,6 +152,6 @@ export default function RegisterPage() {
                     </div>
                 </CardFooter>
             </Card>
-        </div>
+        </div >
     );
 }

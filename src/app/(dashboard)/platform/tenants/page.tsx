@@ -12,7 +12,9 @@ import {
     MoreVertical,
     ExternalLink,
     Loader2,
-    Trash2
+    Trash2,
+    Pencil,
+    Eye
 } from "lucide-react";
 
 import {
@@ -51,14 +53,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 export default function PlatformTenantsPage() {
     const queryClient = useQueryClient();
     const [isAdding, setIsAdding] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [editingTenant, setEditingTenant] = useState<any>(null);
+    const [deletingTenant, setDeletingTenant] = useState<any>(null);
+    const [searchTerm, setSearchTerm] = useState("");
+
     const [newTenant, setNewTenant] = useState({
+        name: "",
+        description: "",
+        type: "CUSTOMER",
+        owner_id: ""
+    });
+    const [editForm, setEditForm] = useState({
         name: "",
         description: "",
         type: "CUSTOMER",
@@ -67,6 +81,11 @@ export default function PlatformTenantsPage() {
     const [userSearch, setUserSearch] = useState("");
     const [selectedUser, setSelectedUser] = useState<any>(null);
     const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+
+    // Edit user selection state
+    const [editUserSearch, setEditUserSearch] = useState("");
+    const [editSelectedUser, setEditSelectedUser] = useState<any>(null);
+    const [isEditUserDropdownOpen, setIsEditUserDropdownOpen] = useState(false);
 
     // 1. Fetch Tenants
     const { data: tenants, isLoading } = useQuery({
@@ -92,7 +111,19 @@ export default function PlatformTenantsPage() {
         u.username?.toLowerCase().includes(userSearch.toLowerCase())
     );
 
-    // 2. Create Tenant
+    const editFilteredUsers = users?.filter((u: any) =>
+        u.email.toLowerCase().includes(editUserSearch.toLowerCase()) ||
+        `${u.first_name} ${u.last_name}`.toLowerCase().includes(editUserSearch.toLowerCase()) ||
+        u.username?.toLowerCase().includes(editUserSearch.toLowerCase())
+    );
+
+    // Filter tenants by search
+    const filteredTenants = tenants?.filter((t: any) =>
+        t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.id.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // 3. Create Tenant
     const createMutation = useMutation({
         mutationFn: async (payload: any) => {
             await apiClient.post("/platform/tenants", payload);
@@ -110,6 +141,56 @@ export default function PlatformTenantsPage() {
         }
     });
 
+    // 4. Update Tenant
+    const updateMutation = useMutation({
+        mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+            await apiClient.put(`/platform/tenants/${id}`, payload);
+        },
+        onSuccess: () => {
+            toast.success("Organization updated successfully");
+            setIsEditing(false);
+            setEditingTenant(null);
+            queryClient.invalidateQueries({ queryKey: ["allTenants"] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to update organization");
+        }
+    });
+
+    // 5. Delete Tenant
+    const deleteMutation = useMutation({
+        mutationFn: async (id: string) => {
+            await apiClient.delete(`/platform/tenants/${id}`);
+        },
+        onSuccess: () => {
+            toast.success("Organization deleted successfully");
+            setIsDeleting(false);
+            setDeletingTenant(null);
+            queryClient.invalidateQueries({ queryKey: ["allTenants"] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to delete organization");
+        }
+    });
+
+    const openEditDialog = (tenant: any) => {
+        setEditingTenant(tenant);
+        setEditForm({
+            name: tenant.name,
+            description: tenant.description || "",
+            type: tenant.type,
+            owner_id: tenant.owner_id || ""
+        });
+        const owner = users?.find((u: any) => u.id === tenant.owner_id);
+        setEditSelectedUser(owner || null);
+        setIsEditing(true);
+    };
+
+    const openDeleteDialog = (tenant: any) => {
+        setDeletingTenant(tenant);
+        setIsDeleting(true);
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -120,6 +201,7 @@ export default function PlatformTenantsPage() {
                     </p>
                 </div>
 
+                {/* Create Dialog */}
                 <Dialog open={isAdding} onOpenChange={setIsAdding}>
                     <DialogTrigger asChild>
                         <Button className="rounded-xl shadow-lg shadow-foreground/20 bg-foreground text-background hover:bg-foreground/90">
@@ -243,10 +325,141 @@ export default function PlatformTenantsPage() {
                 </Dialog>
             </div>
 
+            {/* Edit Dialog */}
+            <Dialog open={isEditing} onOpenChange={setIsEditing}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Organization</DialogTitle>
+                        <DialogDescription>
+                            Update the details of this organization.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Organization Name</label>
+                            <Input
+                                value={editForm.name}
+                                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Description</label>
+                            <Input
+                                value={editForm.description}
+                                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Tenant Type</label>
+                            <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                value={editForm.type}
+                                onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
+                            >
+                                <option value="CUSTOMER">Customer</option>
+                                <option value="PLATFORM">Platform</option>
+                            </select>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Owner</label>
+                            <DropdownMenu open={isEditUserDropdownOpen} onOpenChange={setIsEditUserDropdownOpen}>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" className="w-full justify-between font-normal h-10">
+                                        {editSelectedUser ? (
+                                            <span className="truncate">
+                                                {editSelectedUser.first_name} {editSelectedUser.last_name} ({editSelectedUser.email})
+                                            </span>
+                                        ) : (
+                                            <span className="text-muted-foreground">Select owner...</span>
+                                        )}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-[380px] p-0" align="start">
+                                    <div className="p-2 border-b">
+                                        <div className="relative">
+                                            <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                                            <Input
+                                                placeholder="Search users..."
+                                                value={editUserSearch}
+                                                onChange={(e) => setEditUserSearch(e.target.value)}
+                                                className="pl-8 h-9 text-xs"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="max-h-[240px] overflow-y-auto p-1">
+                                        {editFilteredUsers?.map((user: any) => (
+                                            <DropdownMenuItem
+                                                key={user.id}
+                                                onSelect={() => {
+                                                    setEditSelectedUser(user);
+                                                    setEditForm({ ...editForm, owner_id: user.id });
+                                                    setIsEditUserDropdownOpen(false);
+                                                }}
+                                                className="flex items-center justify-between py-2 cursor-pointer"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold">
+                                                        {user.first_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-medium">{user.first_name} {user.last_name}</span>
+                                                        <span className="text-[10px] text-muted-foreground font-mono">{user.email}</span>
+                                                    </div>
+                                                </div>
+                                                {editSelectedUser?.id === user.id && <Check className="h-4 w-4 text-primary" />}
+                                            </DropdownMenuItem>
+                                        ))}
+                                    </div>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
+                        <Button
+                            onClick={() => editingTenant && updateMutation.mutate({ id: editingTenant.id, payload: editForm })}
+                            disabled={updateMutation.isPending || !editForm.name}
+                        >
+                            {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save Changes
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={isDeleting} onOpenChange={setIsDeleting}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Organization</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete <strong>{deletingTenant?.name}</strong>? This action is irreversible and will remove all associated data.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsDeleting(false)}>Cancel</Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => deletingTenant && deleteMutation.mutate(deletingTenant.id)}
+                            disabled={deleteMutation.isPending}
+                        >
+                            {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Delete Organization
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <div className="flex items-center gap-4">
                 <div className="relative flex-1 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search tenants by name or slug..." className="pl-10" />
+                    <Input
+                        placeholder="Search tenants by name or slug..."
+                        className="pl-10"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                 </div>
             </div>
 
@@ -268,7 +481,7 @@ export default function PlatformTenantsPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {tenants?.map((t: any) => (
+                            {filteredTenants?.map((t: any) => (
                                 <TableRow key={t.id} className="group transition-colors">
                                     <TableCell>
                                         <div className="flex items-center gap-3">
@@ -312,21 +525,30 @@ export default function PlatformTenantsPage() {
                                                 <DropdownMenuItem className="cursor-pointer">
                                                     <Globe className="h-4 w-4 mr-2" /> View Dashboard
                                                 </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    className="cursor-pointer"
+                                                    onClick={() => openEditDialog(t)}
+                                                >
+                                                    <Pencil className="h-4 w-4 mr-2" /> Edit Organization
+                                                </DropdownMenuItem>
                                                 <DropdownMenuItem className="cursor-pointer">
                                                     <ExternalLink className="h-4 w-4 mr-2" /> Visit Login Page
                                                 </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
-                                                <DropdownMenuItem className="text-destructive cursor-pointer">
-                                                    <Trash2 className="h-4 w-4 mr-2" /> Suspend Tenant
+                                                <DropdownMenuItem
+                                                    className="text-destructive cursor-pointer"
+                                                    onClick={() => openDeleteDialog(t)}
+                                                >
+                                                    <Trash2 className="h-4 w-4 mr-2" /> Delete Tenant
                                                 </DropdownMenuItem>
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {(!tenants || tenants.length === 0) && (
+                            {(!filteredTenants || filteredTenants.length === 0) && (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                                         No organizations found in the platform.
                                     </TableCell>
                                 </TableRow>

@@ -34,16 +34,25 @@ export default function TenantCommunicationsPage() {
     const queryClient = useQueryClient();
     const { activeTenantId } = useAuthStore();
 
+    // ── Email State ──
     const [emailForm, setEmailForm] = useState<any>({
         provider: "smtp",
         from_email: "",
         api_key: "",
         is_active: true
     });
-
     const [testEmail, setTestEmail] = useState("");
 
-    // 1. Fetch Email Config
+    // ── SMS State ──
+    const [smsForm, setSmsForm] = useState<any>({
+        provider: "twilio",
+        from_number: "",
+        api_key: "",
+        is_active: true
+    });
+    const [testPhone, setTestPhone] = useState("");
+
+    // ── Email Queries ──
     const { data: emailConfig, isLoading: isLoadingEmail } = useQuery({
         queryKey: ["tenantEmailConfig", activeTenantId],
         queryFn: async () => {
@@ -58,20 +67,39 @@ export default function TenantCommunicationsPage() {
             setEmailForm({
                 provider: emailConfig.provider,
                 from_email: emailConfig.from_email,
-                api_key: "", // Don't populate API key for security (hint is in response usually)
+                api_key: "",
                 is_active: emailConfig.is_active
             });
         }
     }, [emailConfig]);
 
-    // 2. Save Email Config
+    // ── SMS Queries ──
+    const { data: smsConfig, isLoading: isLoadingSms } = useQuery({
+        queryKey: ["tenantSmsConfig", activeTenantId],
+        queryFn: async () => {
+            const { data } = await apiClient.get(`/tenants/${activeTenantId}/sms-config`);
+            return data;
+        },
+        enabled: !!activeTenantId,
+    });
+
+    useEffect(() => {
+        if (smsConfig && !smsConfig.platform_provider) {
+            setSmsForm({
+                provider: smsConfig.provider,
+                from_number: smsConfig.from_number,
+                api_key: "",
+                is_active: smsConfig.is_active
+            });
+        }
+    }, [smsConfig]);
+
+    // ── Email Mutations ──
     const saveEmailMutation = useMutation({
         mutationFn: async (payload: any) => {
             if (emailConfig?.platform_provider) {
-                // Create new
                 await apiClient.post(`/tenants/${activeTenantId}/email-config`, payload);
             } else {
-                // Update existing
                 await apiClient.put(`/tenants/${activeTenantId}/email-config`, payload);
             }
         },
@@ -84,7 +112,6 @@ export default function TenantCommunicationsPage() {
         }
     });
 
-    // 3. Test Email
     const testEmailMutation = useMutation({
         mutationFn: async (toEmail: string) => {
             const { data } = await apiClient.post(`/tenants/${activeTenantId}/email-config/test`, { to_email: toEmail });
@@ -102,21 +129,71 @@ export default function TenantCommunicationsPage() {
         }
     });
 
+    // ── SMS Mutations ──
+    const saveSMSMutation = useMutation({
+        mutationFn: async (payload: any) => {
+            if (smsConfig?.platform_provider) {
+                await apiClient.post(`/tenants/${activeTenantId}/sms-config`, payload);
+            } else {
+                await apiClient.put(`/tenants/${activeTenantId}/sms-config`, payload);
+            }
+        },
+        onSuccess: () => {
+            toast.success("SMS configuration saved");
+            queryClient.invalidateQueries({ queryKey: ["tenantSmsConfig", activeTenantId] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to save SMS config");
+        }
+    });
+
+    const deleteSMSMutation = useMutation({
+        mutationFn: async () => {
+            await apiClient.delete(`/tenants/${activeTenantId}/sms-config`);
+        },
+        onSuccess: () => {
+            toast.success("SMS config removed, reverted to platform default");
+            setSmsForm({ provider: "twilio", from_number: "", api_key: "", is_active: true });
+            queryClient.invalidateQueries({ queryKey: ["tenantSmsConfig", activeTenantId] });
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Failed to remove SMS config");
+        }
+    });
+
+    const testSMSMutation = useMutation({
+        mutationFn: async (toNumber: string) => {
+            const { data } = await apiClient.post(`/tenants/${activeTenantId}/sms-config/test`, { to_number: toNumber });
+            return data;
+        },
+        onSuccess: (data) => {
+            if (data.success) {
+                toast.success("Test SMS sent successfully!");
+            } else {
+                toast.error(`Failed to send test SMS: ${data.error}`);
+            }
+        },
+        onError: (error: any) => {
+            toast.error(error.response?.data?.detail || "Test SMS request failed");
+        }
+    });
+
     if (!activeTenantId) return <div className="p-8 text-center">Select an organization.</div>;
 
     const isUsingPlatformEmail = !!emailConfig?.platform_provider;
+    const isUsingPlatformSMS = !!smsConfig?.platform_provider;
 
     return (
         <div className="space-y-8 max-w-4xl">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight">Communications</h1>
                 <p className="text-muted-foreground mt-1">
-                    Configure custom email and SMS providers for your organization's notifications.
+                    Configure custom email and SMS providers for your organization&apos;s notifications.
                 </p>
             </div>
 
             <div className="grid gap-8">
-                {/* Email Configuration */}
+                {/* ─── Email Configuration ─── */}
                 <Card className="shadow-sm border-muted overflow-hidden">
                     <CardHeader className="bg-primary/[0.02] border-b border-muted">
                         <div className="flex items-center justify-between">
@@ -146,7 +223,7 @@ export default function TenantCommunicationsPage() {
                                 <p className="font-semibold">Default Provider Active</p>
                                 <p className="text-muted-foreground text-xs">
                                     Currently using <strong>{emailConfig.platform_provider}</strong> from <strong>{emailConfig.platform_from_email}</strong>.
-                                    Configure your own provider below to use a custom "From" address and dedicated reputation.
+                                    Configure your own provider below to use a custom &quot;From&quot; address and dedicated reputation.
                                 </p>
                             </div>
                         )}
@@ -225,20 +302,134 @@ export default function TenantCommunicationsPage() {
                     </CardFooter>
                 </Card>
 
-                {/* SMS Configuration Placeholder */}
-                <Card className="shadow-sm border-muted opacity-60">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Smartphone className="h-5 w-5 text-muted-foreground" />
-                            SMS Gateway
-                        </CardTitle>
-                        <CardDescription>
-                            Set up Twilio or MessageBird for SMS-based MFA.
-                        </CardDescription>
+                {/* ─── SMS Configuration ─── */}
+                <Card className="shadow-sm border-muted overflow-hidden">
+                    <CardHeader className="bg-primary/[0.02] border-b border-muted">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                                <CardTitle className="flex items-center gap-2">
+                                    <Smartphone className="h-5 w-5 text-primary" />
+                                    SMS Gateway
+                                </CardTitle>
+                                <CardDescription>
+                                    Set up Twilio or MessageBird for SMS-based MFA and notifications.
+                                </CardDescription>
+                            </div>
+                            {isUsingPlatformSMS ? (
+                                <Badge variant="secondary" className="flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3" /> Using Platform Default
+                                </Badge>
+                            ) : smsConfig ? (
+                                <Badge variant="default" className="flex items-center gap-1">
+                                    <CheckCircle2 className="h-3 w-3" /> Custom Config Active
+                                </Badge>
+                            ) : (
+                                <Badge variant="secondary" className="flex items-center gap-1">
+                                    Not Configured
+                                </Badge>
+                            )}
+                        </div>
                     </CardHeader>
-                    <CardContent className="py-10 text-center italic text-muted-foreground text-sm">
-                        SMS Configuration is coming soon. Use TOTP or Passkeys for MFA in the meantime.
+                    <CardContent className="pt-6 space-y-6">
+                        {isUsingPlatformSMS && (
+                            <div className="p-4 bg-muted/40 rounded-xl border border-muted text-sm space-y-2">
+                                <p className="font-semibold">Platform Default Active</p>
+                                <p className="text-muted-foreground text-xs">
+                                    Currently using <strong>{smsConfig.platform_provider}</strong> from <strong>{smsConfig.platform_from_number}</strong>.
+                                    Configure your own provider below to use a custom sender number.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">SMS Provider</label>
+                                <select
+                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    value={smsForm.provider}
+                                    onChange={(e) => setSmsForm({ ...smsForm, provider: e.target.value })}
+                                >
+                                    <option value="twilio">Twilio</option>
+                                    <option value="messagebird">MessageBird</option>
+                                    <option value="vonage">Vonage (Nexmo)</option>
+                                    <option value="aws_sns">AWS SNS</option>
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">From Number</label>
+                                <Input
+                                    placeholder="+1234567890"
+                                    value={smsForm.from_number}
+                                    onChange={(e) => setSmsForm({ ...smsForm, from_number: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">API Key / Auth Token</label>
+                            <Input
+                                type="password"
+                                placeholder={smsConfig?.credential_hint ? `Stored: ${smsConfig.credential_hint}` : "Paste your API key or auth token"}
+                                value={smsForm.api_key}
+                                onChange={(e) => setSmsForm({ ...smsForm, api_key: e.target.value })}
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 border rounded-xl bg-muted/10">
+                            <div className="space-y-0.5">
+                                <p className="text-sm font-semibold">Activate this configuration</p>
+                                <p className="text-xs text-muted-foreground">When enabled, platform SMS defaults will be ignored.</p>
+                            </div>
+                            <Switch
+                                checked={smsForm.is_active}
+                                onCheckedChange={(val) => setSmsForm({ ...smsForm, is_active: val })}
+                            />
+                        </div>
                     </CardContent>
+                    <CardFooter className="bg-muted/30 flex justify-between gap-4 p-4">
+                        <div className="flex gap-2 flex-1">
+                            <Input
+                                placeholder="Test phone number"
+                                className="max-w-[200px] h-9 text-xs"
+                                value={testPhone}
+                                onChange={(e) => setTestPhone(e.target.value)}
+                            />
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => testSMSMutation.mutate(testPhone)}
+                                disabled={testSMSMutation.isPending || !testPhone || isUsingPlatformSMS}
+                            >
+                                {testSMSMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+                                Send Test
+                            </Button>
+                        </div>
+                        <div className="flex gap-2">
+                            {!isUsingPlatformSMS && smsConfig && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() => {
+                                        if (confirm("Remove custom SMS config and revert to platform default?")) {
+                                            deleteSMSMutation.mutate();
+                                        }
+                                    }}
+                                    disabled={deleteSMSMutation.isPending}
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" /> Reset
+                                </Button>
+                            )}
+                            <Button
+                                size="sm"
+                                onClick={() => saveSMSMutation.mutate(smsForm)}
+                                disabled={saveSMSMutation.isPending}
+                            >
+                                {saveSMSMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                <Save className="mr-2 h-4 w-4" /> Save Config
+                            </Button>
+                        </div>
+                    </CardFooter>
                 </Card>
             </div>
         </div>

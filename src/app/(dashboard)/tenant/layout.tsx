@@ -10,7 +10,8 @@ import {
     ShieldCheck,
     Mail,
     Smartphone,
-    Globe
+    Globe,
+    ScrollText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,11 @@ const navItems = [
         title: "Email & SMS",
         href: "/tenant/communications",
         icon: Mail,
+    },
+    {
+        title: "Activity Log",
+        href: "/tenant/audit",
+        icon: ScrollText,
     },
 ];
 

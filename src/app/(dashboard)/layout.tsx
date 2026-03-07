@@ -37,6 +37,9 @@ export default function DashboardLayout({
     const { setTheme, theme } = useTheme();
     const router = useRouter();
 
+    const hasPlatformScope =
+        user?.roles?.some((assignment) => assignment.role.scope === "PLATFORM") ?? false;
+
     const handleLogout = () => {
         logout();
         router.push("/login");
@@ -73,9 +76,14 @@ export default function DashboardLayout({
                             <Link href="/tenant" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                                 <Building className="h-4 w-4" /> Tenant
                             </Link>
-                            <Link href="/platform" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
-                                <Computer className="h-4 w-4" /> Platform
-                            </Link>
+                            {hasPlatformScope && (
+                                <Link
+                                    href="/platform"
+                                    className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                                >
+                                    <Computer className="h-4 w-4" /> Platform
+                                </Link>
+                            )}
                         </nav>
 
                         {/* User Dropdown */}
@@ -83,7 +91,7 @@ export default function DashboardLayout({
                             <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                                     <Avatar className="h-9 w-9">
-                                        <AvatarImage src={user?.avatar_url} alt={user?.email || "User avatar"} />
+                                        <AvatarImage src={user?.avatar_url || "https://avatar.vercel.sh/user"} alt={user?.email || "User avatar"} />
                                         <AvatarFallback className="bg-primary/10 text-primary">
                                             {getInitials(user?.first_name || user?.username, user?.email)}
                                         </AvatarFallback>

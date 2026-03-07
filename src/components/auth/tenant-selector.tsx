@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/auth-store";
 import {
@@ -8,7 +10,6 @@ import {
     Check,
     ChevronsUpDown,
     Plus,
-    Globe
 } from "lucide-react";
 
 import {
@@ -23,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function TenantSelector() {
-    const { activeTenantId, setActiveTenantId } = useAuthStore();
+    const { user, activeTenantId, setActiveTenantId } = useAuthStore();
 
     const { data: tenants, isLoading } = useQuery({
         queryKey: ["myTenants"],
@@ -33,7 +34,18 @@ export function TenantSelector() {
         },
     });
 
-    const activeTenant = tenants?.find((t: any) => t.id === activeTenantId);
+    const hasPlatformScope =
+        user?.roles?.some((r: { role: { scope: string } }) => r.role.scope === "PLATFORM") ?? false;
+
+    useEffect(() => {
+        if (!tenants?.length) return;
+        const currentInList = tenants.some((t: { id: string }) => t.id === activeTenantId);
+        if (!activeTenantId || !currentInList) {
+            setActiveTenantId(tenants[0].id);
+        }
+    }, [tenants, activeTenantId, setActiveTenantId]);
+
+    const activeTenant = tenants?.find((t: { id: string }) => t.id === activeTenantId);
 
     return (
         <DropdownMenu>
@@ -49,7 +61,7 @@ export function TenantSelector() {
                             <Building className="h-4 w-4 text-primary" />
                         </div>
                         <span className="truncate text-xs font-semibold">
-                            {activeTenant?.name || (isLoading ? "Loading..." : "Personal Account")}
+                            {isLoading ? "Loading..." : activeTenant?.name ?? "Select organization"}
                         </span>
                     </div>
                     <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50 ml-2" />
@@ -67,7 +79,7 @@ export function TenantSelector() {
                     </DropdownMenuItem>
                 )}
 
-                {tenants?.map((tenant: any) => (
+                {tenants?.map((tenant: { id: string; name: string }) => (
                     <DropdownMenuItem
                         key={tenant.id}
                         onClick={() => setActiveTenantId(tenant.id)}
@@ -96,15 +108,22 @@ export function TenantSelector() {
                     </DropdownMenuItem>
                 ))}
 
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="cursor-pointer py-2">
-                    <div className="flex items-center gap-2">
-                        <div className="p-1 rounded bg-muted">
-                            <Plus className="h-3 w-3 text-muted-foreground" />
-                        </div>
-                        <span className="text-sm">Create New Organization</span>
-                    </div>
-                </DropdownMenuItem>
+                {hasPlatformScope && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                            <Link
+                                href="/platform/tenants"
+                                className="cursor-pointer py-2 flex items-center gap-2"
+                            >
+                                <div className="p-1 rounded bg-muted">
+                                    <Plus className="h-3 w-3 text-muted-foreground" />
+                                </div>
+                                <span className="text-sm">Create New Organization</span>
+                            </Link>
+                        </DropdownMenuItem>
+                    </>
+                )}
             </DropdownMenuContent>
         </DropdownMenu>
     );

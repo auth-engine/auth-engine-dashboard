@@ -49,3 +49,46 @@ export interface OAuthLoginResponse {
     is_new_user: boolean;
     provider: "google" | "github" | "microsoft" | "authengine";
 }
+
+export interface MFAChallengeResponse {
+    mfa_pending_token: string;
+    message: string;
+}
+
+export interface ServiceKeyResponse {
+    id: string;
+    key_prefix: string;
+    description?: string;
+    created_at: string;
+    last_used_at?: string | null;
+    raw_key?: string; // Only present once on creation
+}
+
+export interface AuditLogEntry {
+    id: string;
+    action: string;
+    actor_id: string;
+    resource_type?: string;
+    tenant_id?: string;
+    ip_address?: string;
+    user_agent?: string;
+    created_at: string;
+    details?: Record<string, any>;
+}
+
+export interface SmsConfigResponse {
+    provider: string;
+    from_number: string;
+    api_key?: string;
+    credential_hint?: string;
+    is_active: boolean;
+    platform_provider?: string;
+    platform_from_number?: string;
+}
+
+export interface LinkedOAuthAccount {
+    provider: string;
+    provider_user_id: string;
+    email?: string;
+    linked_at: string;
+}

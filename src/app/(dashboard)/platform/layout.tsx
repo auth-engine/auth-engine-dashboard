@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import {
     LineChart,
     Building2,
     Users2,
     ShieldAlert,
     ScrollText,
-    ChevronRight
+    ChevronRight,
+    Key
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
+import { Badge } from "@/components/ui/badge";
 
 const navItems = [
     {
@@ -34,6 +38,11 @@ const navItems = [
         icon: ShieldAlert,
     },
     {
+        title: "Service Keys",
+        href: "/platform/service-keys",
+        icon: Key,
+    },
+    {
         title: "Audit Explorer",
         href: "/platform/audit",
         icon: ScrollText,
@@ -46,6 +55,17 @@ export default function PlatformLayout({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
+    const router = useRouter();
+    const { user } = useAuthStore();
+
+    const hasPlatformScope =
+        user?.roles?.some((assignment) => assignment.role.scope === "PLATFORM") ?? false;
+
+    useEffect(() => {
+        if (!hasPlatformScope) {
+            router.replace("/tenant");
+        }
+    }, [hasPlatformScope, router]);
 
     return (
         <div className="flex flex-col md:flex-row gap-8">
@@ -58,7 +78,7 @@ export default function PlatformLayout({
                 </div>
                 <nav className="space-y-1">
                     {navItems.map((item) => {
-                        const isActive = pathname === item.href;
+                        const isActive = pathname === item.href || (item.href !== "/platform" && pathname.startsWith(item.href));
                         return (
                             <Link
                                 key={item.href}
@@ -88,5 +108,3 @@ export default function PlatformLayout({
         </div>
     );
 }
-
-import { Badge } from "@/components/ui/badge";
