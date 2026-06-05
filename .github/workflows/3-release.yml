@@ -1,0 +1,75 @@
+name: auth-engine-frontend · Create GitHub Release
+
+# Manual only for now. To chain after image build later, uncomment:
+# on:
+#   workflow_run:
+#     workflows: ["auth-engine-frontend · Build and Push Docker Image"]
+#     types: [completed]
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (e.g. v1.0.0)
+        required: true
+        type: string
+      previous-tag:
+        description: Previous tag (use "None" for first release)
+        required: true
+        default: latest
+        type: string
+
+jobs:
+  release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV="${{ inputs.previous-tag }}"
+          CURRENT="${{ inputs.tag }}"
+
+          if [ "$PREV" = "None" ] || [ "$PREV" = "latest" ]; then
+            PREV=$(git tag --sort=-version:refname | grep -v "^${CURRENT}$" | head -n 1)
+          fi
+
+          if [ -z "$PREV" ]; then
+            LOG=$(git log --pretty=format:"- %s (%h)")
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)" ${PREV}..${CURRENT})
+          fi
+
+          [ -z "$LOG" ] && LOG="- No changes"
+
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "PREV=$PREV" >> $GITHUB_OUTPUT
+
+      - name: Determine pre-release
+        id: prerelease
+        run: |
+          [[ "${{ inputs.tag }}" =~ -(rc|beta|alpha)\. ]] \
+            && echo "VALUE=true" >> $GITHUB_OUTPUT \
+            || echo "VALUE=false" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: Release ${{ inputs.tag }}
+          prerelease: ${{ steps.prerelease.outputs.VALUE }}
+          body: |
+            ## What's Changed
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            **Full Changelog:** ${{ steps.changelog.outputs.PREV }}...${{ inputs.tag }}
