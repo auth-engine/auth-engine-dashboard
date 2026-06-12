@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 
 import { apiClient } from "@/lib/api-client";
@@ -41,6 +41,7 @@ const registerSchema = z.object({
 export default function RegisterPage() {
     const router = useRouter();
     const { setTokens, setUser } = useAuthStore();
+    const [showPassword, setShowPassword] = useState(false);
 
     const form = useForm<z.infer<typeof registerSchema>>({
         resolver: zodResolver(registerSchema),
@@ -55,12 +56,9 @@ export default function RegisterPage() {
             // Step 1: Register user
             await apiClient.post("/auth/register", {
                 email: values.email,
-                phone_number: "+00000000000",
                 username: values.email.split("@")[0],
                 password: values.password,
-                first_name: "User",
-                last_name: "Name",
-                auth_strategy: "email_password",
+                auth_strategy: "email_password"
             });
 
             // Step 2: Auto login after registration
@@ -101,14 +99,14 @@ export default function RegisterPage() {
                 <CardContent>
                     <Form {...form}>
                         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                            <FormField
+                             <FormField
                                 control={form.control}
                                 name="email"
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Email</FormLabel>
                                         <FormControl>
-                                            <Input placeholder="name@example.com" {...field} />
+                                            <Input placeholder="" {...field} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -121,7 +119,27 @@ export default function RegisterPage() {
                                     <FormItem>
                                         <FormLabel>Password</FormLabel>
                                         <FormControl>
-                                            <Input type="password" placeholder="••••••••" {...field} />
+                                            <div className="relative">
+                                                <Input
+                                                    type={showPassword ? "text" : "password"}
+                                                    placeholder=""
+                                                    className="pr-10"
+                                                    {...field}
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                                                    onClick={() => setShowPassword(!showPassword)}
+                                                >
+                                                    {showPassword ? (
+                                                        <Eye className="h-4 w-4 text-muted-foreground" />
+                                                    ) : (
+                                                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                                                    )}
+                                                </Button>
+                                            </div>
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>

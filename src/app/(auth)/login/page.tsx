@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KeyRound, Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { KeyRound, Loader2, ShieldCheck, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { startAuthentication } from "@simplewebauthn/browser";
 
 import { apiClient } from "@/lib/api-client";
@@ -49,6 +49,7 @@ function LoginPageContent() {
     const [mfaPendingToken, setMfaPendingToken] = useState<string | null>(null);
     const [mfaCode, setMfaCode] = useState("");
     const [isWebAuthnLoading, setIsWebAuthnLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const form = useForm<z.infer<typeof loginSchema>>({
         resolver: zodResolver(loginSchema),
@@ -219,7 +220,7 @@ function LoginPageContent() {
                                     <FormItem>
                                         <FormLabel>Email</FormLabel>
                                         <FormControl>
-                                            <Input {...field} placeholder="name@example.com" />
+                                            <Input {...field} placeholder="" />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -241,7 +242,27 @@ function LoginPageContent() {
                                             </Link>
                                         </div>
                                         <FormControl>
-                                            <Input type="password" {...field} />
+                                            <div className="relative">
+                                                <Input
+                                                    type={showPassword ? "text" : "password"}
+                                                    placeholder=""
+                                                    className="pr-10"
+                                                    {...field}
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                                                    onClick={() => setShowPassword(!showPassword)}
+                                                >
+                                                    {showPassword ? (
+                                                        <Eye className="h-4 w-4 text-muted-foreground" />
+                                                    ) : (
+                                                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                                                    )}
+                                                </Button>
+                                            </div>
                                         </FormControl>
                                     </FormItem>
                                 )}

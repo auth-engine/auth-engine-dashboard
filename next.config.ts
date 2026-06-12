@@ -1,8 +1,16 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   reactCompiler: true,
-  output: "standalone",
+  ...(process.env.NODE_ENV === "production"
+    ? { output: "standalone" as const }
+    : {}),
+  allowedDevOrigins: [
+    "localhost",
+    "127.0.0.1",
+    "*.localhost",
+    "app.authengine.org",
+    "api.authengine.org",
+  ],
 };
 
 export default nextConfig;

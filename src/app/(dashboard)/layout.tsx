@@ -2,14 +2,11 @@
 
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { useAuthStore } from "@/stores/auth-store";
-import { useTheme } from "next-themes";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
     LogOut,
-    Moon,
     Settings,
-    Sun,
     User,
     ShieldCheck,
     Building,
@@ -27,6 +24,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { TenantSelector } from "@/components/auth/tenant-selector";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function DashboardLayout({
     children,
@@ -34,7 +32,6 @@ export default function DashboardLayout({
     children: React.ReactNode;
 }) {
     const { user, logout } = useAuthStore();
-    const { setTheme, theme } = useTheme();
     const router = useRouter();
 
     const hasPlatformScope =
@@ -70,9 +67,6 @@ export default function DashboardLayout({
                     <div className="flex flex-1 items-center justify-end gap-4">
                         {/* Top Navigation Links */}
                         <nav className="hidden md:flex items-center gap-6 mr-4 text-sm font-medium">
-                            <Link href="/me" className="text-muted-foreground hover:text-foreground transition-colors">
-                                Profile
-                            </Link>
                             <Link href="/tenant" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                                 <Building className="h-4 w-4" /> Tenant
                             </Link>
@@ -85,6 +79,8 @@ export default function DashboardLayout({
                                 </Link>
                             )}
                         </nav>
+
+                        <ThemeToggle />
 
                         {/* User Dropdown */}
                         <DropdownMenu>
@@ -119,19 +115,8 @@ export default function DashboardLayout({
                                 <DropdownMenuItem asChild>
                                     <Link href="/me/security" className="cursor-pointer w-full flex items-center">
                                         <Settings className="mr-2 h-4 w-4" />
-                                        <span>Security Settings</span>
+                                        <span>Settings</span>
                                     </Link>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator />
-
-                                <DropdownMenuItem onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-                                    {theme === "dark" ? (
-                                        <Sun className="mr-2 h-4 w-4" />
-                                    ) : (
-                                        <Moon className="mr-2 h-4 w-4" />
-                                    )}
-                                    <span>Toggle Theme</span>
                                 </DropdownMenuItem>
 
                                 <DropdownMenuSeparator />
