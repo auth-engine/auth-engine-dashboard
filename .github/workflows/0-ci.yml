@@ -1,3 +1,4 @@
+# Pipeline: merge to main → 0-ci → 1-build-push → 4-deploy (EC2)
 name: auth-engine-dashboard · Lint and Build
 
 on:

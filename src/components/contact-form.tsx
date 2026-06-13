@@ -51,7 +51,7 @@ export function ContactForm() {
   const update = (key: keyof typeof EMPTY, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!form.firstName || !form.lastName || !form.email || !form.company) {
@@ -63,13 +63,53 @@ export function ContactForm() {
       return;
     }
 
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
     setIsSubmitting(true);
-    // No public lead endpoint yet — simulate submission and hand off to the team.
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const res = await fetch(`${apiBase}/public/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first_name: form.firstName,
+          last_name: form.lastName,
+          email: form.email,
+          phone: form.phone || null,
+          job_title: form.jobTitle || null,
+          company: form.company,
+          company_size: form.companySize || null,
+          country: form.country || null,
+          mau: form.mau || null,
+          interest: form.interest || null,
+          message: form.message || null,
+          consent: form.consent,
+        }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as {
+        detail?: string;
+        message?: string;
+      };
+
+      if (!res.ok) {
+        const detail =
+          typeof data.detail === "string"
+            ? data.detail
+            : "Could not submit your request. Please try again.";
+        toast.error(detail);
+        return;
+      }
+
       setForm({ ...EMPTY });
-      toast.success("Thanks! Our team will reach out within 1 business day.");
-    }, 900);
+      toast.success(
+        data.message || "Thanks! Our team will reach out within 1 business day."
+      );
+    } catch {
+      toast.error("Network error. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

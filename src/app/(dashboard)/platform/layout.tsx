@@ -10,7 +10,8 @@ import {
     ShieldAlert,
     ScrollText,
     ChevronRight,
-    Key
+    Key,
+    Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
@@ -41,6 +42,11 @@ const navItems = [
         title: "Service Keys",
         href: "/platform/service-keys",
         icon: Key,
+    },
+    {
+        title: "Contact Leads",
+        href: "/platform/leads",
+        icon: Inbox,
     },
     {
         title: "Audit Explorer",

@@ -82,6 +82,26 @@ export interface AuditLogEntry {
     details?: Record<string, unknown>;
 }
 
+export interface ContactLead {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone?: string;
+    job_title?: string;
+    company: string;
+    company_size?: string;
+    country?: string;
+    mau?: string;
+    interest?: string;
+    message?: string;
+    consent: boolean;
+    created_at: string;
+    source?: string;
+    ip_address?: string;
+    user_agent?: string;
+}
+
 export interface Permission {
     id: string;
     name: string;
