@@ -32,10 +32,20 @@ jobs:
     steps:
       - name: Require EC2 instance id
         run: |
-          if [ -z "${EC2_INSTANCE_ID}" ]; then
+          INSTANCE_ID="$(printf '%s' "${EC2_INSTANCE_ID}" | tr -d '[:space:]')"
+          if [ -z "${INSTANCE_ID}" ]; then
             echo "Set repository variable EC2_INSTANCE_ID (e.g. i-05bd906b129c9acb2)" >&2
             exit 1
           fi
+          if ! printf '%s' "${INSTANCE_ID}" | grep -Eq '^i-[0-9a-f]{8,17}$'; then
+            echo "Invalid EC2_INSTANCE_ID: '${INSTANCE_ID}'" >&2
+            echo "Repository variable must be only the instance id, with no spaces or newlines." >&2
+            exit 1
+          fi
+          if [ "${INSTANCE_ID}" != "${EC2_INSTANCE_ID}" ]; then
+            echo "Trimmed whitespace from EC2_INSTANCE_ID (check the repo variable in GitHub Settings)." >&2
+          fi
+          echo "EC2_INSTANCE_ID=${INSTANCE_ID}" >> "${GITHUB_ENV}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
