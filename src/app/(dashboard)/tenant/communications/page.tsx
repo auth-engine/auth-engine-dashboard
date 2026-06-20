@@ -1,427 +1,535 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient } from "@/lib/api-client";
-import { getApiErrorMessage } from "@/lib/errors";
-import { EmailConfig, EmailConfigForm, SmsConfigForm, SmsConfigResponse } from "@/lib/types";
-import { useAuthStore } from "@/stores/auth-store";
-import {
-    Mail,
-    Smartphone,
-    Send,
-    CheckCircle2,
-    Loader2,
-    Save,
-    Trash2,
-    AlertCircle
-} from "lucide-react";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Mail, Plus, Smartphone, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
     CardDescription,
-    CardFooter,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
-import { useState } from "react";
+import { Label } from "@/components/ui/label";
+import { apiClient } from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/errors";
+import {
+    EmailConfigForm,
+    EmailConfigListResponse,
+    SmsConfigForm,
+    SmsConfigListResponse,
+} from "@/lib/types";
+import { useAuthStore } from "@/stores/auth-store";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
-const DEFAULT_EMAIL_FORM: EmailConfigForm = {
-    provider: "smtp",
-    from_email: "",
-    api_key: "",
-    is_active: true,
+const PROVIDER_LABELS: Record<string, string> = {
+    sendgrid: "SendGrid",
+    ses: "AWS SES",
+    twilio: "Twilio",
+    android_gateway: "Android Gateway",
 };
 
-const DEFAULT_SMS_FORM: SmsConfigForm = {
-    provider: "twilio",
-    from_number: "",
-    api_key: "",
-    is_active: true,
-};
-
-function buildEmailForm(config?: EmailConfig): EmailConfigForm {
-    if (config && !config.platform_provider) {
-        return {
-            provider: config.provider,
-            from_email: config.from_email,
-            api_key: "",
-            is_active: config.is_active,
-        };
-    }
-    return DEFAULT_EMAIL_FORM;
+function providerLabel(value: string) {
+    return PROVIDER_LABELS[value] ?? value;
 }
 
-function buildSmsForm(config?: SmsConfigResponse): SmsConfigForm {
-    if (config && !config.platform_provider) {
-        return {
-            provider: config.provider,
-            from_number: config.from_number,
-            api_key: "",
-            is_active: config.is_active,
-        };
-    }
-    return DEFAULT_SMS_FORM;
+function ConfigRow({ label, value }: { label: string; value: ReactNode }) {
+    return (
+        <div className="flex items-center justify-between gap-4 py-1.5 text-sm">
+            <span className="text-muted-foreground">{label}</span>
+            <span className="font-medium text-right">{value}</span>
+        </div>
+    );
 }
 
-function EmailConfigSection({
-    emailConfig,
+function EmailSection({
     activeTenantId,
+    data,
+    isLoading,
 }: {
-    emailConfig?: EmailConfig;
     activeTenantId: string;
+    data?: EmailConfigListResponse;
+    isLoading: boolean;
 }) {
     const queryClient = useQueryClient();
-    const [emailForm, setEmailForm] = useState<EmailConfigForm>(() => buildEmailForm(emailConfig));
-    const [testEmail, setTestEmail] = useState("");
+    const [open, setOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+    const [form, setForm] = useState<EmailConfigForm>({
+        provider: "ses",
+        from_email: "",
+        api_key: "",
+        set_active: true,
+    });
 
-    const isUsingPlatformEmail = !!emailConfig?.platform_provider;
+    const invalidate = () =>
+        queryClient.invalidateQueries({ queryKey: ["tenantEmailConfig", activeTenantId] });
 
-    const saveEmailMutation = useMutation({
-        mutationFn: async (payload: EmailConfigForm) => {
-            if (emailConfig?.platform_provider) {
-                await apiClient.post(`/tenants/${activeTenantId}/email-config`, payload);
-            } else {
-                await apiClient.put(`/tenants/${activeTenantId}/email-config`, payload);
-            }
+    const createMutation = useMutation({
+        mutationFn: async () => {
+            await apiClient.post(`/tenants/${activeTenantId}/email-config`, form);
         },
         onSuccess: () => {
-            toast.success("Email configuration saved");
-            queryClient.invalidateQueries({ queryKey: ["tenantEmailConfig", activeTenantId] });
+            toast.success("Email configuration added");
+            setOpen(false);
+            setForm({ provider: "ses", from_email: "", api_key: "", set_active: true });
+            invalidate();
         },
         onError: (error: unknown) => {
-            toast.error(getApiErrorMessage(error, "Failed to save email config"));
+            toast.error(getApiErrorMessage(error, "Failed to add email config"));
         },
     });
 
-    const testEmailMutation = useMutation({
-        mutationFn: async (toEmail: string) => {
-            const { data } = await apiClient.post<{ success: boolean; error?: string }>(
-                `/tenants/${activeTenantId}/email-config/test`,
-                { to_email: toEmail }
-            );
-            return data;
+    const activateMutation = useMutation({
+        mutationFn: async (configId: string) => {
+            await apiClient.put(`/tenants/${activeTenantId}/email-config/${configId}`, {
+                set_active: true,
+            });
         },
-        onSuccess: (data) => {
-            if (data.success) {
-                toast.success("Test email sent successfully!");
-            } else {
-                toast.error(`Failed to send test email: ${data.error}`);
-            }
+        onSuccess: () => {
+            toast.success("Active email configuration updated");
+            invalidate();
         },
         onError: (error: unknown) => {
-            toast.error(getApiErrorMessage(error, "Test email request failed"));
+            toast.error(getApiErrorMessage(error, "Failed to activate configuration"));
         },
     });
+
+    const deleteMutation = useMutation({
+        mutationFn: async (configId: string) => {
+            await apiClient.delete(`/tenants/${activeTenantId}/email-config/${configId}`);
+        },
+        onSuccess: () => {
+            toast.success("Email configuration removed");
+            invalidate();
+        },
+        onError: (error: unknown) => {
+            toast.error(getApiErrorMessage(error, "Failed to delete configuration"));
+        },
+    });
+
+    const providers = data?.available_providers ?? ["sendgrid", "ses"];
 
     return (
-        <Card className="shadow-sm border-muted overflow-hidden">
-            <CardHeader className="bg-primary/[0.02] border-b border-muted">
-                <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                        <CardTitle className="flex items-center gap-2">
+        <Card>
+            <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <CardTitle className="flex items-center gap-2 text-lg">
                             <Mail className="h-5 w-5 text-primary" />
-                            Email Provider
+                            Email
                         </CardTitle>
                         <CardDescription>
-                            Emails are sent for magic links, password resets, and invitations.
+                            Magic links, password resets, and invitations.
                         </CardDescription>
                     </div>
-                    {isUsingPlatformEmail ? (
-                        <Badge variant="secondary" className="flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" /> Using Platform Default
-                        </Badge>
-                    ) : (
-                        <Badge variant="default" className="flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> Custom Config Active
-                        </Badge>
-                    )}
-                </div>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-6">
-                {isUsingPlatformEmail && emailConfig && (
-                    <div className="p-4 bg-muted/40 rounded-xl border border-muted text-sm space-y-2">
-                        <p className="font-semibold">Default Provider Active</p>
-                        <p className="text-muted-foreground text-xs">
-                            Currently using <strong>{emailConfig.platform_provider}</strong> from <strong>{emailConfig.platform_from_email}</strong>.
-                            Configure your own provider below to use a custom &quot;From&quot; address and dedicated reputation.
-                        </p>
-                    </div>
-                )}
-
-                <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">Provider Type</label>
-                        <select
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            value={emailForm.provider}
-                            onChange={(e) => setEmailForm({ ...emailForm, provider: e.target.value })}
-                        >
-                            <option value="smtp">SMTP (Universal)</option>
-                            <option value="sendgrid">SendGrid</option>
-                            <option value="mailgun">Mailgun</option>
-                            <option value="aws_ses">AWS SES</option>
-                        </select>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">From Email Address</label>
-                        <Input
-                            placeholder="noreply@authengine.org"
-                            value={emailForm.from_email}
-                            onChange={(e) => setEmailForm({ ...emailForm, from_email: e.target.value })}
-                        />
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <label className="text-sm font-medium">API Key or Credentials</label>
-                    <Input
-                        type="password"
-                        placeholder={emailConfig?.credential_hint ? `Stored: ${emailConfig.credential_hint}` : "Paste your API key or SMTP string"}
-                        value={emailForm.api_key}
-                        onChange={(e) => setEmailForm({ ...emailForm, api_key: e.target.value })}
-                    />
-                </div>
-
-                <div className="flex items-center justify-between p-4 border rounded-xl bg-muted/10">
-                    <div className="space-y-0.5">
-                        <p className="text-sm font-semibold">Activate this configuration</p>
-                        <p className="text-xs text-muted-foreground">When enabled, platform defaults will be ignored.</p>
-                    </div>
-                    <Switch
-                        checked={emailForm.is_active}
-                        onCheckedChange={(val) => setEmailForm({ ...emailForm, is_active: val })}
-                    />
-                </div>
-            </CardContent>
-            <CardFooter className="bg-muted/30 flex justify-between gap-4 p-4">
-                <div className="flex gap-2 flex-1">
-                    <Input
-                        placeholder="Test email recipient"
-                        className="max-w-[200px] h-9 text-xs"
-                        value={testEmail}
-                        onChange={(e) => setTestEmail(e.target.value)}
-                    />
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => testEmailMutation.mutate(testEmail)}
-                        disabled={testEmailMutation.isPending || !testEmail || isUsingPlatformEmail}
-                    >
-                        {testEmailMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
-                        Send Test
+                    <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
                     </Button>
                 </div>
-                <Button
-                    size="sm"
-                    onClick={() => saveEmailMutation.mutate(emailForm)}
-                    disabled={saveEmailMutation.isPending}
-                >
-                    {saveEmailMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    <Save className="mr-2 h-4 w-4" /> Save Config
-                </Button>
-            </CardFooter>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {isLoading ? (
+                    <div className="flex justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                ) : (
+                    <>
+                        {data?.using_platform_default ? (
+                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                Using platform default:{" "}
+                                <strong>{providerLabel(data.platform_provider ?? "")}</strong>
+                                {" · "}
+                                {data.platform_from_email}
+                            </div>
+                        ) : null}
+                        {data?.items.length ? (
+                            data.items.map((item) => (
+                                <div key={item.id} className="rounded-lg border p-4 space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="font-medium">
+                                            {providerLabel(item.provider)}
+                                        </div>
+                                        <Badge variant={item.is_active ? "default" : "secondary"}>
+                                            {item.is_active ? "Active" : "Inactive"}
+                                        </Badge>
+                                    </div>
+                                    <ConfigRow label="From" value={item.from_email} />
+                                    <ConfigRow label="Credentials" value={item.credential_hint} />
+                                    <div className="flex flex-wrap gap-2">
+                                        {!item.is_active ? (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                disabled={activateMutation.isPending}
+                                                onClick={() => activateMutation.mutate(item.id)}
+                                            >
+                                                Set active
+                                            </Button>
+                                        ) : null}
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="text-destructive hover:text-destructive"
+                                            disabled={deleteMutation.isPending}
+                                            onClick={() => setDeleteTargetId(item.id)}
+                                        >
+                                            <Trash2 className="h-4 w-4 mr-1" />
+                                            Delete
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            !data?.using_platform_default && (
+                                <p className="text-sm text-muted-foreground">
+                                    No configurations yet.
+                                </p>
+                            )
+                        )}
+                    </>
+                )}
+            </CardContent>
+
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Add email configuration</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Provider</Label>
+                            <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                value={form.provider}
+                                onChange={(e) =>
+                                    setForm({ ...form, provider: e.target.value })
+                                }
+                            >
+                                {providers.map((provider) => (
+                                    <option key={provider} value={provider}>
+                                        {providerLabel(provider)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>From email</Label>
+                            <Input
+                                type="email"
+                                value={form.from_email}
+                                onChange={(e) =>
+                                    setForm({ ...form, from_email: e.target.value })
+                                }
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>API key</Label>
+                            <Input
+                                type="password"
+                                value={form.api_key}
+                                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            onClick={() => createMutation.mutate()}
+                            disabled={createMutation.isPending || !form.from_email || !form.api_key}
+                        >
+                            {createMutation.isPending && (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            )}
+                            Save
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <ConfirmDialog
+                open={!!deleteTargetId}
+                onOpenChange={(open) => !open && setDeleteTargetId(null)}
+                title="Delete this configuration?"
+                description="This action cannot be undone."
+                confirmLabel="Delete"
+                loading={deleteMutation.isPending}
+                onConfirm={() => {
+                    if (deleteTargetId) {
+                        deleteMutation.mutate(deleteTargetId);
+                        setDeleteTargetId(null);
+                    }
+                }}
+            />
         </Card>
     );
 }
 
-function SmsConfigSection({
-    smsConfig,
+function SmsSection({
     activeTenantId,
+    data,
+    isLoading,
 }: {
-    smsConfig?: SmsConfigResponse;
     activeTenantId: string;
+    data?: SmsConfigListResponse;
+    isLoading: boolean;
 }) {
     const queryClient = useQueryClient();
-    const [smsForm, setSmsForm] = useState<SmsConfigForm>(() => buildSmsForm(smsConfig));
-    const [testPhone, setTestPhone] = useState("");
-
-    const isUsingPlatformSMS = !!smsConfig?.platform_provider;
-
-    const saveSMSMutation = useMutation({
-        mutationFn: async (payload: SmsConfigForm) => {
-            if (smsConfig?.platform_provider) {
-                await apiClient.post(`/tenants/${activeTenantId}/sms-config`, payload);
-            } else {
-                await apiClient.put(`/tenants/${activeTenantId}/sms-config`, payload);
-            }
-        },
-        onSuccess: () => {
-            toast.success("SMS configuration saved");
-            queryClient.invalidateQueries({ queryKey: ["tenantSmsConfig", activeTenantId] });
-        },
-        onError: (error: unknown) => {
-            toast.error(getApiErrorMessage(error, "Failed to save SMS config"));
-        },
+    const [open, setOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+    const [form, setForm] = useState<SmsConfigForm>({
+        provider: "android_gateway",
+        from_number: "gateway",
+        api_key: "",
+        account_sid: "",
+        set_active: true,
     });
 
-    const deleteSMSMutation = useMutation({
+    const invalidate = () =>
+        queryClient.invalidateQueries({ queryKey: ["tenantSmsConfig", activeTenantId] });
+
+    const createMutation = useMutation({
         mutationFn: async () => {
-            await apiClient.delete(`/tenants/${activeTenantId}/sms-config`);
+            await apiClient.post(`/tenants/${activeTenantId}/sms-config`, {
+                ...form,
+                account_sid: form.account_sid || null,
+            });
         },
         onSuccess: () => {
-            toast.success("SMS config removed, reverted to platform default");
-            setSmsForm(DEFAULT_SMS_FORM);
-            queryClient.invalidateQueries({ queryKey: ["tenantSmsConfig", activeTenantId] });
+            toast.success("SMS configuration added");
+            setOpen(false);
+            setForm({
+                provider: "android_gateway",
+                from_number: "gateway",
+                api_key: "",
+                account_sid: "",
+                set_active: true,
+            });
+            invalidate();
         },
         onError: (error: unknown) => {
-            toast.error(getApiErrorMessage(error, "Failed to remove SMS config"));
+            toast.error(getApiErrorMessage(error, "Failed to add SMS config"));
         },
     });
 
-    const testSMSMutation = useMutation({
-        mutationFn: async (toNumber: string) => {
-            const { data } = await apiClient.post<{ success: boolean; error?: string }>(
-                `/tenants/${activeTenantId}/sms-config/test`,
-                { to_number: toNumber }
-            );
-            return data;
+    const activateMutation = useMutation({
+        mutationFn: async (configId: string) => {
+            await apiClient.put(`/tenants/${activeTenantId}/sms-config/${configId}`, {
+                set_active: true,
+            });
         },
-        onSuccess: (data) => {
-            if (data.success) {
-                toast.success("Test SMS sent successfully!");
-            } else {
-                toast.error(`Failed to send test SMS: ${data.error}`);
-            }
+        onSuccess: () => {
+            toast.success("Active SMS configuration updated");
+            invalidate();
         },
         onError: (error: unknown) => {
-            toast.error(getApiErrorMessage(error, "Test SMS request failed"));
+            toast.error(getApiErrorMessage(error, "Failed to activate configuration"));
         },
     });
+
+    const deleteMutation = useMutation({
+        mutationFn: async (configId: string) => {
+            await apiClient.delete(`/tenants/${activeTenantId}/sms-config/${configId}`);
+        },
+        onSuccess: () => {
+            toast.success("SMS configuration removed");
+            invalidate();
+        },
+        onError: (error: unknown) => {
+            toast.error(getApiErrorMessage(error, "Failed to delete configuration"));
+        },
+    });
+
+    const providers = data?.available_providers ?? ["twilio", "android_gateway"];
 
     return (
-        <Card className="shadow-sm border-muted overflow-hidden">
-            <CardHeader className="bg-primary/[0.02] border-b border-muted">
-                <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                        <CardTitle className="flex items-center gap-2">
+        <Card>
+            <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <CardTitle className="flex items-center gap-2 text-lg">
                             <Smartphone className="h-5 w-5 text-primary" />
-                            SMS Gateway
+                            SMS
                         </CardTitle>
-                        <CardDescription>
-                            Set up Twilio or MessageBird for SMS-based MFA and notifications.
-                        </CardDescription>
+                        <CardDescription>SMS OTP and phone verification.</CardDescription>
                     </div>
-                    {isUsingPlatformSMS ? (
-                        <Badge variant="secondary" className="flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" /> Using Platform Default
-                        </Badge>
-                    ) : smsConfig ? (
-                        <Badge variant="default" className="flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> Custom Config Active
-                        </Badge>
-                    ) : (
-                        <Badge variant="secondary" className="flex items-center gap-1">
-                            Not Configured
-                        </Badge>
-                    )}
+                    <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                    </Button>
                 </div>
             </CardHeader>
-            <CardContent className="pt-6 space-y-6">
-                {isUsingPlatformSMS && smsConfig && (
-                    <div className="p-4 bg-muted/40 rounded-xl border border-muted text-sm space-y-2">
-                        <p className="font-semibold">Platform Default Active</p>
-                        <p className="text-muted-foreground text-xs">
-                            Currently using <strong>{smsConfig.platform_provider}</strong> from <strong>{smsConfig.platform_from_number}</strong>.
-                            Configure your own provider below to use a custom sender number.
-                        </p>
+            <CardContent className="space-y-4">
+                {isLoading ? (
+                    <div className="flex justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
                     </div>
+                ) : (
+                    <>
+                        {data?.using_platform_default ? (
+                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                                Using platform default:{" "}
+                                <strong>{providerLabel(data.platform_provider ?? "")}</strong>
+                                {" · "}
+                                {data.platform_from_number}
+                            </div>
+                        ) : null}
+                        {data?.items.length ? (
+                            data.items.map((item) => (
+                                <div key={item.id} className="rounded-lg border p-4 space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="font-medium">
+                                            {providerLabel(item.provider)}
+                                        </div>
+                                        <Badge variant={item.is_active ? "default" : "secondary"}>
+                                            {item.is_active ? "Active" : "Inactive"}
+                                        </Badge>
+                                    </div>
+                                    <ConfigRow label="From" value={item.from_number} />
+                                    {item.account_sid ? (
+                                        <ConfigRow
+                                            label="Gateway / account"
+                                            value={item.account_sid}
+                                        />
+                                    ) : null}
+                                    <ConfigRow label="Credentials" value={item.credential_hint} />
+                                    <div className="flex flex-wrap gap-2">
+                                        {!item.is_active ? (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                disabled={activateMutation.isPending}
+                                                onClick={() => activateMutation.mutate(item.id)}
+                                            >
+                                                Set active
+                                            </Button>
+                                        ) : null}
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="text-destructive hover:text-destructive"
+                                            disabled={deleteMutation.isPending}
+                                            onClick={() => setDeleteTargetId(item.id)}
+                                        >
+                                            <Trash2 className="h-4 w-4 mr-1" />
+                                            Delete
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            !data?.using_platform_default && (
+                                <p className="text-sm text-muted-foreground">
+                                    No configurations yet.
+                                </p>
+                            )
+                        )}
+                    </>
                 )}
-
-                <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">SMS Provider</label>
-                        <select
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            value={smsForm.provider}
-                            onChange={(e) => setSmsForm({ ...smsForm, provider: e.target.value })}
-                        >
-                            <option value="twilio">Twilio</option>
-                            <option value="messagebird">MessageBird</option>
-                            <option value="vonage">Vonage (Nexmo)</option>
-                            <option value="aws_sns">AWS SNS</option>
-                        </select>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium">From Number</label>
-                        <Input
-                            placeholder="+1234567890"
-                            value={smsForm.from_number}
-                            onChange={(e) => setSmsForm({ ...smsForm, from_number: e.target.value })}
-                        />
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <label className="text-sm font-medium">API Key / Auth Token</label>
-                    <Input
-                        type="password"
-                        placeholder={smsConfig?.credential_hint ? `Stored: ${smsConfig.credential_hint}` : "Paste your API key or auth token"}
-                        value={smsForm.api_key}
-                        onChange={(e) => setSmsForm({ ...smsForm, api_key: e.target.value })}
-                    />
-                </div>
-
-                <div className="flex items-center justify-between p-4 border rounded-xl bg-muted/10">
-                    <div className="space-y-0.5">
-                        <p className="text-sm font-semibold">Activate this configuration</p>
-                        <p className="text-xs text-muted-foreground">When enabled, platform SMS defaults will be ignored.</p>
-                    </div>
-                    <Switch
-                        checked={smsForm.is_active}
-                        onCheckedChange={(val) => setSmsForm({ ...smsForm, is_active: val })}
-                    />
-                </div>
             </CardContent>
-            <CardFooter className="bg-muted/30 flex justify-between gap-4 p-4">
-                <div className="flex gap-2 flex-1">
-                    <Input
-                        placeholder="Test phone number"
-                        className="max-w-[200px] h-9 text-xs"
-                        value={testPhone}
-                        onChange={(e) => setTestPhone(e.target.value)}
-                    />
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => testSMSMutation.mutate(testPhone)}
-                        disabled={testSMSMutation.isPending || !testPhone || isUsingPlatformSMS}
-                    >
-                        {testSMSMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
-                        Send Test
-                    </Button>
-                </div>
-                <div className="flex gap-2">
-                    {!isUsingPlatformSMS && smsConfig && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => {
-                                if (confirm("Remove custom SMS config and revert to platform default?")) {
-                                    deleteSMSMutation.mutate();
+
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Add SMS configuration</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Provider</Label>
+                            <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                value={form.provider}
+                                onChange={(e) =>
+                                    setForm({ ...form, provider: e.target.value })
                                 }
-                            }}
-                            disabled={deleteSMSMutation.isPending}
+                            >
+                                {providers.map((provider) => (
+                                    <option key={provider} value={provider}>
+                                        {providerLabel(provider)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>From number / sender id</Label>
+                            <Input
+                                value={form.from_number}
+                                onChange={(e) =>
+                                    setForm({ ...form, from_number: e.target.value })
+                                }
+                            />
+                        </div>
+                        {form.provider === "android_gateway" ? (
+                            <div className="space-y-2">
+                                <Label>Gateway URL</Label>
+                                <Input
+                                    value={form.account_sid}
+                                    onChange={(e) =>
+                                        setForm({ ...form, account_sid: e.target.value })
+                                    }
+                                    placeholder="https://api.sms-gate.app/3rdparty/v1"
+                                />
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <Label>Twilio account SID</Label>
+                                <Input
+                                    value={form.account_sid}
+                                    onChange={(e) =>
+                                        setForm({ ...form, account_sid: e.target.value })
+                                    }
+                                />
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label>API key / auth token</Label>
+                            <Input
+                                type="password"
+                                value={form.api_key}
+                                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            onClick={() => createMutation.mutate()}
+                            disabled={createMutation.isPending || !form.from_number || !form.api_key}
                         >
-                            <Trash2 className="mr-2 h-4 w-4" /> Reset
+                            {createMutation.isPending && (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            )}
+                            Save
                         </Button>
-                    )}
-                    <Button
-                        size="sm"
-                        onClick={() => saveSMSMutation.mutate(smsForm)}
-                        disabled={saveSMSMutation.isPending}
-                    >
-                        {saveSMSMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        <Save className="mr-2 h-4 w-4" /> Save Config
-                    </Button>
-                </div>
-            </CardFooter>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <ConfirmDialog
+                open={!!deleteTargetId}
+                onOpenChange={(open) => !open && setDeleteTargetId(null)}
+                title="Delete this configuration?"
+                description="This action cannot be undone."
+                confirmLabel="Delete"
+                loading={deleteMutation.isPending}
+                onConfirm={() => {
+                    if (deleteTargetId) {
+                        deleteMutation.mutate(deleteTargetId);
+                        setDeleteTargetId(null);
+                    }
+                }}
+            />
         </Card>
     );
 }
@@ -429,50 +537,47 @@ function SmsConfigSection({
 export default function TenantCommunicationsPage() {
     const { activeTenantId } = useAuthStore();
 
-    const { data: emailConfig, isLoading: isLoadingEmail } = useQuery({
+    const { data: emailData, isLoading: isLoadingEmail } = useQuery({
         queryKey: ["tenantEmailConfig", activeTenantId],
         queryFn: async () => {
-            const { data } = await apiClient.get<EmailConfig>(`/tenants/${activeTenantId}/email-config`);
+            const { data } = await apiClient.get<EmailConfigListResponse>(
+                `/tenants/${activeTenantId}/email-config`
+            );
             return data;
         },
         enabled: !!activeTenantId,
     });
 
-    const { data: smsConfig, isLoading: isLoadingSms } = useQuery({
+    const { data: smsData, isLoading: isLoadingSms } = useQuery({
         queryKey: ["tenantSmsConfig", activeTenantId],
         queryFn: async () => {
-            const { data } = await apiClient.get<SmsConfigResponse>(`/tenants/${activeTenantId}/sms-config`);
+            const { data } = await apiClient.get<SmsConfigListResponse>(
+                `/tenants/${activeTenantId}/sms-config`
+            );
             return data;
         },
         enabled: !!activeTenantId,
     });
 
-    if (!activeTenantId) return <div className="p-8 text-center">Select an organization.</div>;
-    if (isLoadingEmail || isLoadingSms) {
-        return <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
+    if (!activeTenantId) {
+        return <div className="p-8 text-center text-muted-foreground">Select an organization.</div>;
     }
 
     return (
-        <div className="space-y-8 max-w-4xl">
+        <div className="space-y-6 max-w-3xl">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight">Communications</h1>
                 <p className="text-muted-foreground mt-1">
-                    Configure custom email and SMS providers for your organization&apos;s notifications.
+                    Add multiple email and SMS providers. Only the active configuration is used.
                 </p>
             </div>
 
-            <div className="grid gap-8">
-                <EmailConfigSection
-                    key={`email-${activeTenantId}-${emailConfig?.provider ?? "default"}`}
-                    emailConfig={emailConfig}
-                    activeTenantId={activeTenantId}
-                />
-                <SmsConfigSection
-                    key={`sms-${activeTenantId}-${smsConfig?.provider ?? "default"}`}
-                    smsConfig={smsConfig}
-                    activeTenantId={activeTenantId}
-                />
-            </div>
+            <EmailSection
+                activeTenantId={activeTenantId}
+                data={emailData}
+                isLoading={isLoadingEmail}
+            />
+            <SmsSection activeTenantId={activeTenantId} data={smsData} isLoading={isLoadingSms} />
         </div>
     );
 }

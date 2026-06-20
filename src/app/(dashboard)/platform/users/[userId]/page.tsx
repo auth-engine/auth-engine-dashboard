@@ -3,9 +3,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/errors";
-import { Role, UserResponse } from "@/lib/types";
+import { Role, TenantResponse, UserResponse } from "@/lib/types";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
     ArrowLeft,
     Loader2,
@@ -48,16 +48,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import Link from "next/link";
+
+type RemoveRoleTarget =
+    | { scope: "platform"; roleName: string }
+    | { scope: "tenant"; roleName: string; roleId: string; tenantId: string; tenantName: string };
 
 export default function PlatformUserDetailPage() {
     const { userId } = useParams<{ userId: string }>();
     const router = useRouter();
     const queryClient = useQueryClient();
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-    const [isAssignRoleOpen, setIsAssignRoleOpen] = useState(false);
-    const [selectedRole, setSelectedRole] = useState("");
+    const [isAssignPlatformRoleOpen, setIsAssignPlatformRoleOpen] = useState(false);
+    const [isAssignTenantRoleOpen, setIsAssignTenantRoleOpen] = useState(false);
+    const [selectedPlatformRoleId, setSelectedPlatformRoleId] = useState("");
+    const [selectedTenantId, setSelectedTenantId] = useState("");
+    const [selectedTenantRoleId, setSelectedTenantRoleId] = useState("");
+    const [removeRoleTarget, setRemoveRoleTarget] = useState<RemoveRoleTarget | null>(null);
 
     // Fetch user details
     const { data: user, isLoading } = useQuery<UserResponse>({
@@ -69,14 +78,36 @@ export default function PlatformUserDetailPage() {
         enabled: !!userId,
     });
 
-    // Fetch available platform roles
-    const { data: roles } = useQuery<Role[]>({
-        queryKey: ["globalRoles"],
+    // Fetch platform roles only (not tenant templates)
+    const { data: platformRoles = [] } = useQuery<Role[]>({
+        queryKey: ["platformRoles"],
         queryFn: async () => {
-            const { data } = await apiClient.get<Role[]>("/platform/roles");
+            const { data } = await apiClient.get<Role[]>("/platform/roles?scope=PLATFORM");
             return data;
         },
     });
+
+    const { data: tenants = [] } = useQuery<TenantResponse[]>({
+        queryKey: ["platformTenants"],
+        queryFn: async () => {
+            const { data } = await apiClient.get<TenantResponse[]>("/platform/tenants");
+            return data.filter((t) => t.type !== "PLATFORM");
+        },
+    });
+
+    const { data: tenantRoles = [], isLoading: isLoadingTenantRoles } = useQuery<Role[]>({
+        queryKey: ["platformTenantRoles", selectedTenantId],
+        queryFn: async () => {
+            const { data } = await apiClient.get<Role[]>(`/platform/tenants/${selectedTenantId}/roles`);
+            return data;
+        },
+        enabled: !!selectedTenantId,
+    });
+
+    const tenantNameById = useMemo(
+        () => Object.fromEntries(tenants.map((t) => [t.id, t.name])),
+        [tenants]
+    );
 
     // Update user status
     const updateStatusMutation = useMutation({
@@ -107,33 +138,75 @@ export default function PlatformUserDetailPage() {
         },
     });
 
-    // Assign role
-    const assignRoleMutation = useMutation({
-        mutationFn: async (roleName: string) => {
-            await apiClient.post(`/platform/users/${userId}/roles`, { role_name: roleName });
+    // Assign platform role
+    const assignPlatformRoleMutation = useMutation({
+        mutationFn: async (roleId: string) => {
+            const role = platformRoles.find((r) => r.id === roleId);
+            await apiClient.post(`/platform/users/${userId}/roles`, {
+                role_id: roleId,
+                role_name: role?.name,
+            });
         },
         onSuccess: () => {
-            toast.success("Role assigned successfully");
-            setIsAssignRoleOpen(false);
-            setSelectedRole("");
+            toast.success("Platform role assigned");
+            setIsAssignPlatformRoleOpen(false);
+            setSelectedPlatformRoleId("");
             queryClient.invalidateQueries({ queryKey: ["platformUser", userId] });
         },
         onError: (error: unknown) => {
-            toast.error(getApiErrorMessage(error, "Failed to assign role"));
+            toast.error(getApiErrorMessage(error, "Failed to assign platform role"));
         },
     });
 
-    // Remove role
-    const removeRoleMutation = useMutation({
+    // Assign tenant role
+    const assignTenantRoleMutation = useMutation({
+        mutationFn: async () => {
+            await apiClient.post(`/platform/users/${userId}/tenant-roles`, {
+                tenant_id: selectedTenantId,
+                role_id: selectedTenantRoleId,
+            });
+        },
+        onSuccess: () => {
+            toast.success("Tenant role assigned");
+            setIsAssignTenantRoleOpen(false);
+            setSelectedTenantId("");
+            setSelectedTenantRoleId("");
+            queryClient.invalidateQueries({ queryKey: ["platformUser", userId] });
+        },
+        onError: (error: unknown) => {
+            toast.error(getApiErrorMessage(error, "Failed to assign tenant role"));
+        },
+    });
+
+    // Remove platform role
+    const removePlatformRoleMutation = useMutation({
         mutationFn: async (roleName: string) => {
             await apiClient.delete(`/platform/users/${userId}/roles/${roleName}`);
         },
         onSuccess: () => {
-            toast.success("Role removed");
+            toast.success("Platform role removed");
+            setRemoveRoleTarget(null);
             queryClient.invalidateQueries({ queryKey: ["platformUser", userId] });
         },
         onError: (error: unknown) => {
-            toast.error(getApiErrorMessage(error, "Failed to remove role"));
+            toast.error(getApiErrorMessage(error, "Failed to remove platform role"));
+        },
+    });
+
+    // Remove tenant role
+    const removeTenantRoleMutation = useMutation({
+        mutationFn: async ({ tenantId, roleId }: { tenantId: string; roleId: string }) => {
+            await apiClient.delete(`/platform/users/${userId}/tenant-roles`, {
+                params: { tenant_id: tenantId, role_id: roleId },
+            });
+        },
+        onSuccess: () => {
+            toast.success("Tenant role removed");
+            setRemoveRoleTarget(null);
+            queryClient.invalidateQueries({ queryKey: ["platformUser", userId] });
+        },
+        onError: (error: unknown) => {
+            toast.error(getApiErrorMessage(error, "Failed to remove tenant role"));
         },
     });
 
@@ -158,10 +231,31 @@ export default function PlatformUserDetailPage() {
 
     const statusOptions = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 
-    // Get user's platform roles
     const userPlatformRoles = user.roles?.filter((r) => r.role?.scope === "PLATFORM") || [];
-    const assignedRoleNames = userPlatformRoles.map((r) => r.role?.name);
-    const availableRoles = roles?.filter((r) => !assignedRoleNames.includes(r.name)) || [];
+    const userTenantRoles = user.roles?.filter((r) => r.role?.scope === "TENANT") || [];
+    const assignedPlatformRoleIds = new Set(userPlatformRoles.map((r) => r.role?.id));
+    const assignedTenantRoleKeys = new Set(
+        userTenantRoles.map((r) => `${r.tenant_id}:${r.role?.id}`)
+    );
+    const availablePlatformRoles = platformRoles.filter((r) => !assignedPlatformRoleIds.has(r.id));
+    const availableTenantRoles = tenantRoles.filter(
+        (r) => !assignedTenantRoleKeys.has(`${selectedTenantId}:${r.id}`)
+    );
+
+    const handleConfirmRemoveRole = () => {
+        if (!removeRoleTarget) return;
+        if (removeRoleTarget.scope === "platform") {
+            removePlatformRoleMutation.mutate(removeRoleTarget.roleName);
+        } else {
+            removeTenantRoleMutation.mutate({
+                tenantId: removeRoleTarget.tenantId,
+                roleId: removeRoleTarget.roleId,
+            });
+        }
+    };
+
+    const isRemoveRolePending =
+        removePlatformRoleMutation.isPending || removeTenantRoleMutation.isPending;
 
     return (
         <div className="space-y-6">
@@ -371,7 +465,7 @@ export default function PlatformUserDetailPage() {
                                 <Shield className="h-5 w-5 text-primary" />
                                 Platform Roles
                             </CardTitle>
-                            <Dialog open={isAssignRoleOpen} onOpenChange={setIsAssignRoleOpen}>
+                            <Dialog open={isAssignPlatformRoleOpen} onOpenChange={setIsAssignPlatformRoleOpen}>
                                 <DialogTrigger asChild>
                                     <Button variant="outline" size="sm" className="h-7 text-xs">
                                         <Plus className="mr-1 h-3 w-3" /> Assign
@@ -381,21 +475,22 @@ export default function PlatformUserDetailPage() {
                                     <DialogHeader>
                                         <DialogTitle>Assign Platform Role</DialogTitle>
                                         <DialogDescription>
-                                            Select a role to assign to {user.email}.
+                                            Select a platform-level role for {user.email}.
                                         </DialogDescription>
                                     </DialogHeader>
                                     <div className="space-y-3 py-4">
-                                        {availableRoles.length === 0 ? (
+                                        {availablePlatformRoles.length === 0 ? (
                                             <p className="text-sm text-muted-foreground text-center py-4">
-                                                All available roles are already assigned.
+                                                All platform roles are already assigned.
                                             </p>
                                         ) : (
                                             <div className="space-y-2">
-                                                {availableRoles.map((role) => (
+                                                {availablePlatformRoles.map((role) => (
                                                     <button
                                                         key={role.id}
-                                                        onClick={() => setSelectedRole(role.name)}
-                                                        className={`w-full text-left p-3 rounded-xl border transition-all ${selectedRole === role.name
+                                                        type="button"
+                                                        onClick={() => setSelectedPlatformRoleId(role.id)}
+                                                        className={`w-full text-left p-3 rounded-xl border transition-all ${selectedPlatformRoleId === role.id
                                                             ? "border-primary bg-primary/5"
                                                             : "border-muted hover:border-primary/30"
                                                             }`}
@@ -411,10 +506,10 @@ export default function PlatformUserDetailPage() {
                                     </div>
                                     <DialogFooter>
                                         <Button
-                                            onClick={() => assignRoleMutation.mutate(selectedRole)}
-                                            disabled={!selectedRole || assignRoleMutation.isPending}
+                                            onClick={() => assignPlatformRoleMutation.mutate(selectedPlatformRoleId)}
+                                            disabled={!selectedPlatformRoleId || assignPlatformRoleMutation.isPending}
                                         >
-                                            {assignRoleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                            {assignPlatformRoleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                             Assign Role
                                         </Button>
                                     </DialogFooter>
@@ -444,11 +539,12 @@ export default function PlatformUserDetailPage() {
                                         variant="ghost"
                                         size="icon"
                                         className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                                        onClick={() => {
-                                            if (confirm(`Remove role "${ra.role.name}" from this user?`)) {
-                                                removeRoleMutation.mutate(ra.role.name);
-                                            }
-                                        }}
+                                        onClick={() =>
+                                            setRemoveRoleTarget({
+                                                scope: "platform",
+                                                roleName: ra.role.name,
+                                            })
+                                        }
                                     >
                                         <X className="h-3.5 w-3.5" />
                                     </Button>
@@ -458,36 +554,183 @@ export default function PlatformUserDetailPage() {
                     </CardContent>
                 </Card>
 
-                {/* All Roles (including tenant) */}
-                {user.roles && user.roles.filter((r) => r.role?.scope !== "PLATFORM").length > 0 && (
-                    <Card className="lg:col-span-3 shadow-sm border-muted overflow-hidden">
-                        <CardHeader className="bg-muted/30 pb-4">
-                            <CardTitle>Tenant Roles</CardTitle>
-                            <CardDescription>Roles assigned within specific organizations</CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-4">
-                            <div className="divide-y divide-muted/50">
-                                {user.roles
-                                    .filter((r) => r.role?.scope !== "PLATFORM")
-                                    .map((ra, idx: number) => (
-                                        <div key={idx} className="py-3 flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <Shield className="h-4 w-4 text-muted-foreground" />
-                                                <div>
-                                                    <p className="text-sm font-medium">{ra.role.name}</p>
-                                                    <p className="text-[10px] text-muted-foreground">{ra.role.description}</p>
-                                                </div>
-                                            </div>
-                                            <Badge variant="outline" className="text-[10px] font-mono">
-                                                Tenant: {ra.tenant_id?.slice(0, 8)}...
-                                            </Badge>
-                                        </div>
-                                    ))}
+                {/* Tenant Roles */}
+                <Card className="lg:col-span-3 shadow-sm border-muted overflow-hidden">
+                    <CardHeader className="bg-muted/30 pb-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle>Tenant Roles</CardTitle>
+                                <CardDescription>Roles assigned within specific organizations</CardDescription>
                             </div>
-                        </CardContent>
-                    </Card>
-                )}
+                            <Dialog open={isAssignTenantRoleOpen} onOpenChange={setIsAssignTenantRoleOpen}>
+                                <DialogTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-7 text-xs">
+                                        <Plus className="mr-1 h-3 w-3" /> Assign
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                    <DialogHeader>
+                                        <DialogTitle>Assign Tenant Role</DialogTitle>
+                                        <DialogDescription>
+                                            Choose an organization and role to assign to {user.email}.
+                                        </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="space-y-4 py-2">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="tenant-select">Organization</Label>
+                                            <select
+                                                id="tenant-select"
+                                                value={selectedTenantId}
+                                                onChange={(e) => {
+                                                    setSelectedTenantId(e.target.value);
+                                                    setSelectedTenantRoleId("");
+                                                }}
+                                                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                            >
+                                                <option value="">Select organization...</option>
+                                                {tenants.map((tenant) => (
+                                                    <option key={tenant.id} value={tenant.id}>
+                                                        {tenant.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="tenant-role-select">Role</Label>
+                                            <select
+                                                id="tenant-role-select"
+                                                value={selectedTenantRoleId}
+                                                onChange={(e) => setSelectedTenantRoleId(e.target.value)}
+                                                disabled={!selectedTenantId || isLoadingTenantRoles}
+                                                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                <option value="">
+                                                    {isLoadingTenantRoles
+                                                        ? "Loading roles..."
+                                                        : "Select role..."}
+                                                </option>
+                                                {availableTenantRoles.map((role) => (
+                                                    <option key={role.id} value={role.id}>
+                                                        {role.name}
+                                                        {role.description ? ` — ${role.description}` : ""}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {selectedTenantId && !isLoadingTenantRoles && availableTenantRoles.length === 0 && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    No additional roles available in this organization.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <DialogFooter>
+                                        <Button
+                                            onClick={() => assignTenantRoleMutation.mutate()}
+                                            disabled={
+                                                !selectedTenantId ||
+                                                !selectedTenantRoleId ||
+                                                assignTenantRoleMutation.isPending
+                                            }
+                                        >
+                                            {assignTenantRoleMutation.isPending && (
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            )}
+                                            Assign Role
+                                        </Button>
+                                    </DialogFooter>
+                                </DialogContent>
+                            </Dialog>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                        {userTenantRoles.length === 0 ? (
+                            <p className="text-sm text-muted-foreground italic text-center py-6">
+                                No tenant roles assigned.
+                            </p>
+                        ) : (
+                            <div className="divide-y divide-muted/50">
+                                {userTenantRoles.map((ra, idx) => (
+                                    <div key={idx} className="py-3 flex items-center justify-between group">
+                                        <div className="flex items-center gap-3">
+                                            <Shield className="h-4 w-4 text-muted-foreground" />
+                                            <div>
+                                                <p className="text-sm font-medium">{ra.role.name}</p>
+                                                <p className="text-[10px] text-muted-foreground">
+                                                    {ra.role.description}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="text-[10px]">
+                                                {tenantNameById[ra.tenant_id ?? ""] || ra.tenant_id?.slice(0, 8)}
+                                            </Badge>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                                                onClick={() =>
+                                                    setRemoveRoleTarget({
+                                                        scope: "tenant",
+                                                        roleName: ra.role.name,
+                                                        roleId: ra.role.id,
+                                                        tenantId: ra.tenant_id!,
+                                                        tenantName:
+                                                            tenantNameById[ra.tenant_id ?? ""] ||
+                                                            "this organization",
+                                                    })
+                                                }
+                                            >
+                                                <X className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
+
+            <Dialog open={!!removeRoleTarget} onOpenChange={(open) => !open && setRemoveRoleTarget(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Remove Role</DialogTitle>
+                        <DialogDescription>
+                            {removeRoleTarget?.scope === "platform" ? (
+                                <>
+                                    Are you sure you want to remove the platform role{" "}
+                                    <strong>{removeRoleTarget.roleName}</strong> from{" "}
+                                    <strong>{user.email}</strong>?
+                                </>
+                            ) : removeRoleTarget?.scope === "tenant" ? (
+                                <>
+                                    Are you sure you want to remove{" "}
+                                    <strong>{removeRoleTarget.roleName}</strong> from{" "}
+                                    <strong>{user.email}</strong> in{" "}
+                                    <strong>{removeRoleTarget.tenantName}</strong>?
+                                </>
+                            ) : null}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setRemoveRoleTarget(null)}
+                            disabled={isRemoveRolePending}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleConfirmRemoveRole}
+                            disabled={isRemoveRolePending}
+                        >
+                            {isRemoveRolePending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Remove Role
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

@@ -3,15 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { TenantResponse } from "@/lib/types";
-import {
-    Building2,
-    Users2,
-    Activity,
-    TrendingUp,
-    Server,
-    Database,
-    Globe
-} from "lucide-react";
+import { Building2, Users2, Activity } from "lucide-react";
 
 import {
     Card,
@@ -21,10 +13,8 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 
 export default function PlatformOverviewPage() {
-    // 1. Fetch Global Stats
     const { data: tenants } = useQuery<TenantResponse[]>({
         queryKey: ["allTenants"],
         queryFn: async () => {
@@ -59,9 +49,6 @@ export default function PlatformOverviewPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold">{tenants?.length || 0}</div>
-                        <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-bold mt-1">
-                            <TrendingUp className="h-3 w-3" /> +12% from last month
-                        </div>
                     </CardContent>
                 </Card>
 
@@ -72,9 +59,6 @@ export default function PlatformOverviewPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold">{users?.length || 0}</div>
-                        <div className="flex items-center gap-1 text-[10px] text-emerald-500 font-bold mt-1">
-                            <TrendingUp className="h-3 w-3" /> +5.2% from last month
-                        </div>
                     </CardContent>
                 </Card>
 
@@ -83,53 +67,19 @@ export default function PlatformOverviewPage() {
                         <CardTitle className="text-xs font-bold uppercase text-muted-foreground">System Health</CardTitle>
                         <Activity className="h-4 w-4 text-muted-foreground group-hover:text-emerald-500 transition-colors" />
                     </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold text-emerald-500">Optimal</div>
-                        <p className="text-[10px] text-muted-foreground mt-1">API Latency: 42ms</p>
-                    </CardContent>
+                    <CardContent />
                 </Card>
 
                 <Card className="border-muted shadow-sm group hover:border-primary/20 transition-all">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-xs font-bold uppercase text-muted-foreground">Storage Used</CardTitle>
-                        <Database className="h-4 w-4 text-muted-foreground group-hover:text-blue-500 transition-colors" />
                     </CardHeader>
-                    <CardContent>
-                        <div className="text-3xl font-bold">12.4 GB</div>
-                        <Progress value={45} className="h-1 mt-2" />
-                    </CardContent>
+                    <CardContent />
                 </Card>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-3">
-                {/* System Info */}
-                <Card className="md:col-span-1 border-muted shadow-sm bg-muted/5">
-                    <CardHeader>
-                        <CardTitle className="text-sm font-bold flex items-center gap-2">
-                            <Server className="h-4 w-4 text-primary" />
-                            System Information
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex items-center justify-between py-2 border-b border-muted">
-                            <span className="text-xs text-muted-foreground">Engine Version</span>
-                            <Badge variant="secondary" className="text-[10px]">v1.4.2-stable</Badge>
-                        </div>
-                        <div className="flex items-center justify-between py-2 border-b border-muted">
-                            <span className="text-xs text-muted-foreground">Environment</span>
-                            <Badge variant="outline" className="text-[10px] border-emerald-500/20 text-emerald-500">Production</Badge>
-                        </div>
-                        <div className="flex items-center justify-between py-2">
-                            <span className="text-xs text-muted-foreground">Region</span>
-                            <span className="text-xs font-medium flex items-center gap-1">
-                                <Globe className="h-3 w-3" /> US-East-1
-                            </span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Recent Tenants */}
-                <Card className="md:col-span-2 border-muted shadow-sm">
+            {/* Recent Tenants */}
+            <Card className="border-muted shadow-sm">
                     <CardHeader>
                         <CardTitle className="text-sm font-bold flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-primary" />
@@ -158,7 +108,6 @@ export default function PlatformOverviewPage() {
                         </div>
                     </CardContent>
                 </Card>
-            </div>
         </div>
     );
 }

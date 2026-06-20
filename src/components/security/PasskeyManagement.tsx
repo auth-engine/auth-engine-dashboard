@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
-import { getApiErrorMessage } from "@/lib/errors";
+import { getApiErrorMessage, isNotAllowedError } from "@/lib/errors";
 import { toast } from "sonner";
 import {
     Plus,
@@ -80,6 +80,7 @@ export default function PasskeyManagement() {
             queryClient.invalidateQueries({ queryKey: ["verifyUser"] });
         },
         onError: (error: unknown) => {
+            if (isNotAllowedError(error)) return;
             console.error(error);
             toast.error(getApiErrorMessage(error, "Failed to register passkey. Try another browser or device."));
         },

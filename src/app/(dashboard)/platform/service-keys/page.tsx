@@ -8,7 +8,7 @@ import { useState } from "react";
 import {
     Key,
     Plus,
-    Trash2,
+    Ban,
     Loader2,
     Copy,
     Eye,
@@ -40,14 +40,18 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function ServiceKeysPage() {
     const queryClient = useQueryClient();
     const [isCreating, setIsCreating] = useState(false);
-    const [description, setDescription] = useState("");
+    const [serviceName, setServiceName] = useState("");
     const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
     const [showKey, setShowKey] = useState(false);
+    const [isRevoking, setIsRevoking] = useState(false);
+    const [revokingKey, setRevokingKey] = useState<ServiceKeyResponse | null>(null);
 
     // Fetch service keys
     const { data: keys, isLoading } = useQuery<ServiceKeyResponse[]>({
@@ -60,16 +64,16 @@ export default function ServiceKeysPage() {
 
     // Create service key
     const createMutation = useMutation({
-        mutationFn: async (desc: string) => {
+        mutationFn: async (name: string) => {
             const { data } = await apiClient.post("/auth/service-keys", {
-                description: desc || undefined,
+                service_name: name,
             });
             return data;
         },
         onSuccess: (data: ServiceKeyResponse) => {
             setNewlyCreatedKey(data.raw_key || data.key_prefix);
             setShowKey(true);
-            setDescription("");
+            setServiceName("");
             toast.success("Service key created! Copy it now — it won't be shown again.");
             queryClient.invalidateQueries({ queryKey: ["serviceKeys"] });
         },
@@ -85,6 +89,8 @@ export default function ServiceKeysPage() {
         },
         onSuccess: () => {
             toast.success("Service key revoked");
+            setIsRevoking(false);
+            setRevokingKey(null);
             queryClient.invalidateQueries({ queryKey: ["serviceKeys"] });
         },
         onError: (error: unknown) => {
@@ -95,6 +101,11 @@ export default function ServiceKeysPage() {
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text);
         toast.success("Copied to clipboard");
+    };
+
+    const openRevokeDialog = (key: ServiceKeyResponse) => {
+        setRevokingKey(key);
+        setIsRevoking(true);
     };
 
     return (
@@ -150,9 +161,14 @@ export default function ServiceKeysPage() {
                                             variant="ghost"
                                             size="icon"
                                             className="h-7 w-7"
+                                            title={showKey ? "Hide key" : "Show key"}
                                             onClick={() => setShowKey(!showKey)}
                                         >
-                                            {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                            {showKey ? (
+                                                <Eye className="h-3.5 w-3.5" />
+                                            ) : (
+                                                <EyeOff className="h-3.5 w-3.5" />
+                                            )}
                                         </Button>
                                         <Button
                                             variant="ghost"
@@ -168,12 +184,18 @@ export default function ServiceKeysPage() {
                         ) : (
                             <div className="space-y-4 py-4">
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium">Description (optional)</label>
+                                    <Label htmlFor="service-name">
+                                        Service Name <span className="text-destructive">*</span>
+                                    </Label>
                                     <Input
-                                        placeholder="e.g. CI/CD Pipeline, Data Sync Service"
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
+                                        id="service-name"
+                                        placeholder="e.g. cicd, data-sync, billing-worker"
+                                        value={serviceName}
+                                        onChange={(e) => setServiceName(e.target.value)}
                                     />
+                                    <p className="text-xs text-muted-foreground">
+                                        A short identifier for the service using this key.
+                                    </p>
                                 </div>
                             </div>
                         )}
@@ -184,8 +206,8 @@ export default function ServiceKeysPage() {
                                 </Button>
                             ) : (
                                 <Button
-                                    onClick={() => createMutation.mutate(description)}
-                                    disabled={createMutation.isPending}
+                                    onClick={() => createMutation.mutate(serviceName.trim())}
+                                    disabled={createMutation.isPending || !serviceName.trim()}
                                 >
                                     {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     Generate Key
@@ -214,7 +236,9 @@ export default function ServiceKeysPage() {
                         <TableHeader className="bg-muted/50">
                             <TableRow>
                                 <TableHead>Key Prefix</TableHead>
-                                <TableHead>Description</TableHead>
+                                <TableHead>Service Name</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Created By</TableHead>
                                 <TableHead>Created</TableHead>
                                 <TableHead>Last Used</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
@@ -232,9 +256,33 @@ export default function ServiceKeysPage() {
                                         </div>
                                     </TableCell>
                                     <TableCell>
-                                        <span className="text-sm text-muted-foreground">
-                                            {key.description || "No description"}
+                                        <span className="text-sm font-medium">
+                                            {key.service_name}
                                         </span>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge
+                                            variant="outline"
+                                            className={
+                                                key.is_active
+                                                    ? "text-emerald-600 border-emerald-500/20 bg-emerald-500/5"
+                                                    : "text-muted-foreground border-muted bg-muted/30"
+                                            }
+                                        >
+                                            {key.is_active ? "Active" : "Revoked"}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                        <div className="space-y-0.5">
+                                            <p className="text-xs font-medium truncate max-w-[160px]">
+                                                {key.creator?.email ?? "Unknown"}
+                                            </p>
+                                            {key.created_by && !key.creator?.email && (
+                                                <p className="text-[10px] text-muted-foreground font-mono truncate max-w-[160px]">
+                                                    {key.created_by.slice(0, 8)}...
+                                                </p>
+                                            )}
+                                        </div>
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -248,18 +296,18 @@ export default function ServiceKeysPage() {
                                         </span>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={() => {
-                                                if (confirm("Revoke this service key? This cannot be undone.")) {
-                                                    revokeMutation.mutate(key.id);
-                                                }
-                                            }}
-                                        >
-                                            <Trash2 className="h-3.5 w-3.5 mr-1" /> Revoke
-                                        </Button>
+                                        {key.is_active ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 text-destructive hover:text-destructive opacity-70 group-hover:opacity-100 transition-opacity"
+                                                onClick={() => openRevokeDialog(key)}
+                                            >
+                                                <Ban className="h-3.5 w-3.5 mr-1" /> Revoke
+                                            </Button>
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground">—</span>
+                                        )}
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -268,13 +316,50 @@ export default function ServiceKeysPage() {
                 )}
             </Card>
 
+            <Dialog open={isRevoking} onOpenChange={setIsRevoking}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Revoke Service Key</DialogTitle>
+                        <DialogDescription asChild>
+                            <div className="space-y-2 text-sm text-muted-foreground">
+                                <p>
+                                    Revoke <strong className="text-foreground">{revokingKey?.service_name}</strong>{" "}
+                                    (<code className="text-xs bg-muted px-1 py-0.5 rounded">{revokingKey?.key_prefix}</code>)?
+                                </p>
+                                <p>
+                                    The key will stop working immediately. Any service using it will receive{" "}
+                                    <strong className="text-foreground">401 Unauthorized</strong>.
+                                </p>
+                                <p>
+                                    This cannot be undone — generate a new key if you need access again. The revoked
+                                    record is kept for audit purposes (there is no separate delete action).
+                                </p>
+                            </div>
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsRevoking(false)}>Cancel</Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => revokingKey && revokeMutation.mutate(revokingKey.id)}
+                            disabled={revokeMutation.isPending}
+                        >
+                            {revokeMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Revoke Key
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex gap-4">
                 <Key className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                 <div className="space-y-1">
                     <p className="text-sm font-semibold text-primary">About Service Keys</p>
                     <p className="text-xs text-muted-foreground">
                         Service keys provide machine-to-machine access to the platform API. Keys are hashed at rest —
-                        only the prefix is stored for identification. Requires <code className="bg-muted px-1 py-0.5 rounded text-[10px]">platform.tenants.manage</code> permission.
+                        only the prefix is stored for identification. Use <strong className="text-foreground">Revoke</strong> to
+                        permanently disable a key; revoked keys remain in the list for audit. To restore access, generate a
+                        new key. Requires <code className="bg-muted px-1 py-0.5 rounded text-[10px]">platform.tenants.manage</code> permission.
                     </p>
                 </div>
             </div>

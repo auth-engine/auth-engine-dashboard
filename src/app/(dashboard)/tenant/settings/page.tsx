@@ -2,7 +2,6 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
-import { useAuthStore } from "@/stores/auth-store";
 import {
     ShieldCheck,
     Clock,
@@ -26,12 +25,13 @@ import { toast } from "sonner";
 import { useState } from "react";
 import { TenantAuthConfig } from "@/lib/types";
 import { getApiErrorMessage } from "@/lib/errors";
+import { useActiveTenant } from "@/hooks/use-active-tenant";
 
 const AUTH_METHODS = [
     { id: "email_password", label: "Email / Password", description: "Standard login with password" },
     { id: "magic_link", label: "Magic Link", description: "Passwordless email login" },
-    { id: "webauthn", label: "Passkeys", description: "Biometric and security keys" },
-    { id: "oauth", label: "Social Login", description: "Google, GitHub, etc." },
+    { id: "passkey", label: "Passkeys", description: "Biometric and security keys" },
+    { id: "social_provider", label: "Social Login", description: "Google, GitHub, AuthEngine, etc." },
 ];
 
 type SettingsFormData = {
@@ -64,7 +64,10 @@ function TenantSettingsForm({
 
     const updateMutation = useMutation({
         mutationFn: async (payload: SettingsFormData) => {
-            await apiClient.put(`/tenants/${activeTenantId}/auth-config`, payload);
+            await apiClient.put(`/tenants/${activeTenantId}/auth-config`, {
+                ...payload,
+                oidc_client_id: payload.oidc_client_id.trim() || null,
+            });
         },
         onSuccess: () => {
             toast.success("Settings updated successfully!");
@@ -203,19 +206,29 @@ function TenantSettingsForm({
 }
 
 export default function TenantSettingsPage() {
-    const { activeTenantId } = useAuthStore();
+    const { activeTenantId, activeTenant, isReady, isLoading } = useActiveTenant();
 
-    const { data: config, isLoading } = useQuery({
+    const { data: config, isLoading: isLoadingConfig } = useQuery({
         queryKey: ["tenantAuthConfig", activeTenantId],
         queryFn: async () => {
             const { data } = await apiClient.get<TenantAuthConfig>(`/tenants/${activeTenantId}/auth-config`);
             return data;
         },
-        enabled: !!activeTenantId,
+        enabled: isReady,
     });
 
-    if (!activeTenantId) return <div className="p-8 text-center text-muted-foreground">Select an organization.</div>;
-    if (isLoading || !config) return <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
+    if (isLoading) return <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
+    if (!isReady) return <div className="p-8 text-center text-muted-foreground">Select an organization.</div>;
+    if (isLoadingConfig || !config) return <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
 
-    return <TenantSettingsForm key={activeTenantId} config={config} activeTenantId={activeTenantId} />;
+    return (
+        <div className="space-y-4">
+            {activeTenant?.type === "PLATFORM" && (
+                <p className="text-sm text-muted-foreground">
+                    Platform-wide login methods for the system organization.
+                </p>
+            )}
+            <TenantSettingsForm key={activeTenantId} config={config} activeTenantId={activeTenantId!} />
+        </div>
+    );
 }
