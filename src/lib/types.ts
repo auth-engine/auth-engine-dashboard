@@ -40,12 +40,22 @@ export interface AuthResponse {
     user?: UserResponse;
 }
 
+export interface TenantOwner {
+    id: string;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+}
+
 export interface TenantResponse {
     id: string;
     name: string;
     description?: string;
     type: string;
     owner_id: string;
+    created_at?: string;
+    updated_at?: string;
+    owner?: TenantOwner;
 }
 export interface OAuthLoginResponse {
     access_token: string;
@@ -61,24 +71,49 @@ export interface MFAChallengeResponse {
     message: string;
 }
 
+export interface MFAEnrollmentRequiredResponse {
+    mfa_enrollment_token: string;
+    message: string;
+}
+
+export interface MFAEnrollResponse {
+    provisioning_uri: string;
+    secret: string;
+    message?: string;
+}
+
 export interface ServiceKeyResponse {
     id: string;
+    service_name: string;
     key_prefix: string;
-    description?: string;
+    tenant_id?: string | null;
+    is_active: boolean;
+    created_by?: string | null;
+    creator?: {
+        id: string;
+        email: string;
+    } | null;
     created_at: string;
     last_used_at?: string | null;
+    expires_at?: string | null;
     raw_key?: string; // Only present once on creation
 }
 
 export interface AuditLogEntry {
     id: string;
+    _id?: string;
     action: string;
-    actor_id: string;
+    actor_id?: string | null;
+    target_user_id?: string | null;
+    tenant_id?: string | null;
+    resource?: string;
+    resource_id?: string | null;
     resource_type?: string;
-    tenant_id?: string;
-    ip_address?: string;
-    user_agent?: string;
+    ip_address?: string | null;
+    user_agent?: string | null;
+    status?: string;
     created_at: string;
+    metadata?: Record<string, unknown> | null;
     details?: Record<string, unknown>;
 }
 
@@ -114,6 +149,12 @@ export interface Role {
     description: string;
     scope: string;
     level: number;
+    tenant_id?: string | null;
+    is_template?: boolean;
+    template_role_id?: string | null;
+    is_protected_tenant_role?: boolean;
+    is_system_role?: boolean;
+    is_name_locked?: boolean;
     created_at: string;
     permissions: Permission[];
     permission_ids: string[];
@@ -127,28 +168,59 @@ export interface TenantAuthConfig {
     oidc_client_id?: string;
 }
 
-export interface EmailConfig {
+export interface PublicTenantAuthConfig {
+    tenant_id: string;
+    allowed_methods: string[];
+}
+
+export interface EmailConfigItem {
+    id: string;
+    tenant_id: string;
     provider: string;
     from_email: string;
-    api_key?: string;
-    credential_hint?: string;
+    credential_hint: string;
     is_active: boolean;
-    platform_provider?: string;
-    platform_from_email?: string;
+}
+
+export interface EmailConfigListResponse {
+    items: EmailConfigItem[];
+    available_providers: string[];
+    using_platform_default: boolean;
+    platform_provider?: string | null;
+    platform_from_email?: string | null;
+}
+
+export interface SmsConfigItem {
+    id: string;
+    tenant_id: string;
+    provider: string;
+    from_number: string;
+    credential_hint: string;
+    account_sid?: string | null;
+    is_active: boolean;
+}
+
+export interface SmsConfigListResponse {
+    items: SmsConfigItem[];
+    available_providers: string[];
+    using_platform_default: boolean;
+    platform_provider?: string | null;
+    platform_from_number?: string | null;
 }
 
 export interface EmailConfigForm {
     provider: string;
     from_email: string;
     api_key: string;
-    is_active: boolean;
+    set_active: boolean;
 }
 
 export interface SmsConfigForm {
     provider: string;
     from_number: string;
     api_key: string;
-    is_active: boolean;
+    account_sid: string;
+    set_active: boolean;
 }
 
 export interface OAuthProvider {
@@ -164,16 +236,6 @@ export interface SocialProviderConfig {
     client_id: string;
     client_secret: string;
     is_enabled: boolean;
-}
-
-export interface SmsConfigResponse {
-    provider: string;
-    from_number: string;
-    api_key?: string;
-    credential_hint?: string;
-    is_active: boolean;
-    platform_provider?: string;
-    platform_from_number?: string;
 }
 
 export interface LinkedOAuthAccount {

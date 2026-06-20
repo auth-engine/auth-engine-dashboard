@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/errors";
 import { SocialProviderConfig } from "@/lib/types";
-import { useAuthStore } from "@/stores/auth-store";
+import { useActiveTenant } from "@/hooks/use-active-tenant";
 import {
     Globe,
     Trash2,
@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface TenantSocialProvider extends SocialProviderConfig {
     id: string;
@@ -79,10 +80,11 @@ const PROVIDER_ICONS: Record<string, LucideIcon> = {
 
 export default function TenantSocialPage() {
     const queryClient = useQueryClient();
-    const { activeTenantId } = useAuthStore();
+    const { activeTenantId, activeTenant, isReady, isLoading: isLoadingTenant } = useActiveTenant();
     const [isAdding, setIsAdding] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editingProvider, setEditingProvider] = useState<TenantSocialProvider | null>(null);
+    const [deleteProviderTarget, setDeleteProviderTarget] = useState<string | null>(null);
 
     const [newProvider, setNewProvider] = useState<SocialProviderCreateForm>({
         provider: "google",
@@ -105,7 +107,7 @@ export default function TenantSocialPage() {
             const { data } = await apiClient.get<TenantSocialProvider[]>(`/tenants/${activeTenantId}/social-providers`);
             return data;
         },
-        enabled: !!activeTenantId,
+        enabled: isReady,
     });
 
     const createMutation = useMutation({
@@ -177,7 +179,15 @@ export default function TenantSocialPage() {
         setIsEditing(true);
     };
 
-    if (!activeTenantId) return <div className="p-8 text-center">Select an organization.</div>;
+    if (isLoadingTenant) {
+        return (
+            <div className="p-20 flex justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            </div>
+        );
+    }
+
+    if (!isReady) return <div className="p-8 text-center">Select an organization.</div>;
 
     return (
         <div className="space-y-8">
@@ -185,7 +195,9 @@ export default function TenantSocialPage() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Social Login (BYO-ID)</h1>
                     <p className="text-muted-foreground mt-1">
-                        Configure custom OAuth/OIDC providers for your organization members.
+                        {activeTenant?.type === "PLATFORM"
+                            ? "Configure social login providers used on the public login page."
+                            : "Configure custom OAuth/OIDC providers for your organization members."}
                     </p>
                 </div>
 
@@ -219,12 +231,16 @@ export default function TenantSocialPage() {
 
                             {newProvider.provider === "authengine" && (
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium">Discovery URL</label>
+                                    <label className="text-sm font-medium">AuthEngine Base URL</label>
                                     <Input
-                                        placeholder="https://auth.authengine.org/.well-known/openid-configuration"
+                                        placeholder="https://api.authengine.org"
                                         value={newProvider.oidc_discovery_url}
                                         onChange={(e) => setNewProvider({ ...newProvider, oidc_discovery_url: e.target.value })}
                                     />
+                                    <p className="text-[10px] text-muted-foreground">
+                                        API root URL of the remote AuthEngine instance. A discovery URL ending in
+                                        /.well-known/openid-configuration is also accepted.
+                                    </p>
                                 </div>
                             )}
 
@@ -287,12 +303,16 @@ export default function TenantSocialPage() {
                     <div className="grid gap-6 py-4">
                         {editingProvider?.provider === "authengine" && (
                             <div className="space-y-2">
-                                <label className="text-sm font-medium">Discovery URL</label>
+                                <label className="text-sm font-medium">AuthEngine Base URL</label>
                                 <Input
-                                    placeholder="https://auth.authengine.org/.well-known/openid-configuration"
+                                    placeholder="https://api.authengine.org"
                                     value={editForm.oidc_discovery_url}
                                     onChange={(e) => setEditForm({ ...editForm, oidc_discovery_url: e.target.value })}
                                 />
+                                <p className="text-[10px] text-muted-foreground">
+                                    API root URL of the remote AuthEngine instance. A discovery URL ending in
+                                    /.well-known/openid-configuration is also accepted.
+                                </p>
                             </div>
                         )}
 
@@ -411,11 +431,7 @@ export default function TenantSocialPage() {
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem
                                                         className="text-destructive cursor-pointer"
-                                                        onClick={() => {
-                                                            if (confirm(`Remove custom ${p.provider} configuration?`)) {
-                                                                deleteMutation.mutate(p.provider);
-                                                            }
-                                                        }}
+                                                        onClick={() => setDeleteProviderTarget(p.provider)}
                                                     >
                                                         <Trash2 className="h-4 w-4 mr-2" /> Delete
                                                     </DropdownMenuItem>
@@ -461,6 +477,25 @@ export default function TenantSocialPage() {
                     </p>
                 </div>
             </div>
+
+            <ConfirmDialog
+                open={!!deleteProviderTarget}
+                onOpenChange={(open) => !open && setDeleteProviderTarget(null)}
+                title="Remove social provider?"
+                description={
+                    deleteProviderTarget
+                        ? `The custom ${deleteProviderTarget} configuration will be deleted.`
+                        : undefined
+                }
+                confirmLabel="Remove"
+                loading={deleteMutation.isPending}
+                onConfirm={() => {
+                    if (deleteProviderTarget) {
+                        deleteMutation.mutate(deleteProviderTarget);
+                        setDeleteProviderTarget(null);
+                    }
+                }}
+            />
         </div>
     );
 }

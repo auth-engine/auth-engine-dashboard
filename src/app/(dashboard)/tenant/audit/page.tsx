@@ -6,7 +6,6 @@ import { AuditLogEntry } from "@/lib/types";
 import { useAuthStore } from "@/stores/auth-store";
 import {
     Search,
-    Filter,
     Clock,
     Activity,
     ArrowRight,
@@ -27,18 +26,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { normalizeAuditLogs } from "@/lib/audit";
+import { AuditLogDetailsDialog } from "@/components/audit/audit-log-details-dialog";
 
 export default function TenantAuditPage() {
     const { activeTenantId } = useAuthStore();
     const [searchTerm, setSearchTerm] = useState("");
+    const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
+    const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
     // Fetch Tenant Audit Logs
     const { data: logs, isLoading } = useQuery<AuditLogEntry[]>({
         queryKey: ["tenantAudit", activeTenantId],
         queryFn: async () => {
             const { data } = await apiClient.get<AuditLogEntry[]>(`/tenants/${activeTenantId}/audit-logs`);
-            return data;
+            return normalizeAuditLogs(data);
         },
         enabled: !!activeTenantId,
     });
@@ -50,13 +53,27 @@ export default function TenantAuditPage() {
         return "text-muted-foreground border-muted bg-muted/5";
     };
 
+    const filteredLogs = useMemo(() => {
+        const term = searchTerm.trim().toLowerCase();
+        if (!term) return logs ?? [];
+
+        return (logs ?? []).filter((log) =>
+            log.action?.toLowerCase().includes(term) ||
+            log.actor_id?.toLowerCase().includes(term) ||
+            log.ip_address?.toLowerCase().includes(term) ||
+            log.resource?.toLowerCase().includes(term) ||
+            log.resource_type?.toLowerCase().includes(term) ||
+            log.resource_id?.toLowerCase().includes(term) ||
+            log.user_agent?.toLowerCase().includes(term)
+        );
+    }, [logs, searchTerm]);
+
     if (!activeTenantId) return <div className="p-8 text-center">Select an organization.</div>;
 
-    const filteredLogs = logs?.filter((log) =>
-        log.action?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.actor_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.ip_address?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const openDetails = (log: AuditLogEntry) => {
+        setSelectedLog(log);
+        setIsDetailsOpen(true);
+    };
 
     return (
         <div className="space-y-6">
@@ -82,9 +99,6 @@ export default function TenantAuditPage() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <Button variant="outline" size="icon" className="shrink-0">
-                    <Filter className="h-4 w-4" />
-                </Button>
             </div>
 
             <Card className="shadow-sm border-muted overflow-hidden">
@@ -111,9 +125,9 @@ export default function TenantAuditPage() {
                                             <Badge variant="outline" className={getActionColor(log.action)}>
                                                 {log.action.replace(/_/g, ' ')}
                                             </Badge>
-                                            {log.resource_type && (
+                                            {(log.resource ?? log.resource_type) && (
                                                 <p className="text-[10px] text-muted-foreground lowercase ml-1">
-                                                    on {log.resource_type}
+                                                    on {log.resource ?? log.resource_type}
                                                 </p>
                                             )}
                                         </div>
@@ -137,16 +151,24 @@ export default function TenantAuditPage() {
                                         </div>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 opacity-70 group-hover:opacity-100 transition-opacity"
+                                            title="View details"
+                                            onClick={() => openDetails(log)}
+                                        >
                                             <ArrowRight className="h-4 w-4" />
                                         </Button>
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {(!filteredLogs || filteredLogs.length === 0) && (
+                            {filteredLogs.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                                        No audit logs found for this organization.
+                                        {searchTerm.trim()
+                                            ? "No audit logs match your search."
+                                            : "No audit logs found for this organization."}
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -154,6 +176,16 @@ export default function TenantAuditPage() {
                     </Table>
                 )}
             </Card>
+
+            <AuditLogDetailsDialog
+                log={selectedLog}
+                open={isDetailsOpen}
+                onOpenChange={(open) => {
+                    setIsDetailsOpen(open);
+                    if (!open) setSelectedLog(null);
+                }}
+                getActionColor={getActionColor}
+            />
         </div>
     );
 }

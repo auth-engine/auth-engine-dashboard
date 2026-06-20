@@ -5,7 +5,6 @@ import { apiClient } from "@/lib/api-client";
 import { ContactLead } from "@/lib/types";
 import {
     Search,
-    Filter,
     Clock,
     Loader2,
     Mail,
@@ -22,11 +21,13 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useMemo, useState } from "react";
 
 export default function PlatformLeadsPage() {
+    const [searchTerm, setSearchTerm] = useState("");
+
     const { data: leads, isLoading } = useQuery<ContactLead[]>({
         queryKey: ["platformContactLeads"],
         queryFn: async () => {
@@ -34,6 +35,25 @@ export default function PlatformLeadsPage() {
             return data;
         },
     });
+
+    const filteredLeads = useMemo(() => {
+        const term = searchTerm.trim().toLowerCase();
+        if (!term) return leads ?? [];
+
+        return (leads ?? []).filter((lead) => {
+            const fullName = `${lead.first_name} ${lead.last_name}`.toLowerCase();
+            return (
+                fullName.includes(term) ||
+                lead.email?.toLowerCase().includes(term) ||
+                lead.company?.toLowerCase().includes(term) ||
+                lead.phone?.toLowerCase().includes(term) ||
+                lead.job_title?.toLowerCase().includes(term) ||
+                lead.interest?.toLowerCase().includes(term) ||
+                lead.country?.toLowerCase().includes(term) ||
+                lead.message?.toLowerCase().includes(term)
+            );
+        });
+    }, [leads, searchTerm]);
 
     return (
         <div className="space-y-6">
@@ -45,18 +65,20 @@ export default function PlatformLeadsPage() {
                     </p>
                 </div>
                 <Badge variant="outline" className="rounded-xl px-3 py-1">
-                    {leads?.length ?? 0} leads
+                    {filteredLeads.length} leads
                 </Badge>
             </div>
 
             <div className="flex items-center gap-4">
                 <div className="relative flex-1 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search by name, email, or company..." className="pl-10" />
+                    <Input
+                        placeholder="Search by name, email, or company..."
+                        className="pl-10"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                 </div>
-                <Button variant="outline" size="icon" className="shrink-0">
-                    <Filter className="h-4 w-4" />
-                </Button>
             </div>
 
             <Card className="shadow-sm border-muted overflow-hidden">
@@ -76,7 +98,7 @@ export default function PlatformLeadsPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {leads?.map((lead) => (
+                            {filteredLeads.map((lead) => (
                                 <TableRow key={lead.id} className="group transition-colors">
                                     <TableCell>
                                         <div className="space-y-1">
@@ -160,10 +182,12 @@ export default function PlatformLeadsPage() {
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {(!leads || leads.length === 0) && (
+                            {filteredLeads.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                                        No contact leads yet.
+                                        {searchTerm.trim()
+                                            ? "No leads match your search."
+                                            : "No contact leads yet."}
                                     </TableCell>
                                 </TableRow>
                             )}

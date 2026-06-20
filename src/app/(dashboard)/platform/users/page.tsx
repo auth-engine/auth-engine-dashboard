@@ -9,10 +9,8 @@ import {
     MoreVertical,
     ShieldCheck,
     Loader2,
-    Filter,
     UserCheck,
     UserX,
-    Shield,
     Eye,
     Trash2
 } from "lucide-react";
@@ -42,11 +40,13 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 export default function PlatformUsersPage() {
     const router = useRouter();
     const queryClient = useQueryClient();
     const [searchTerm, setSearchTerm] = useState("");
+    const [deleteTarget, setDeleteTarget] = useState<{ id: string; email: string } | null>(null);
 
     // 1. Fetch Users
     const { data: users, isLoading } = useQuery<UserResponse[]>({
@@ -110,9 +110,6 @@ export default function PlatformUsersPage() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <Button variant="outline" size="icon" className="shrink-0">
-                    <Filter className="h-4 w-4" />
-                </Button>
             </div>
 
             <Card className="shadow-sm border-muted overflow-hidden">
@@ -183,9 +180,7 @@ export default function PlatformUsersPage() {
                                                 >
                                                     <Eye className="h-4 w-4 mr-2" /> View Details
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem className="cursor-pointer">
-                                                    <Shield className="h-4 w-4 mr-2" /> Global Roles
-                                                </DropdownMenuItem>
+
                                                 <DropdownMenuSeparator />
                                                 {u.status === "ACTIVE" ? (
                                                     <DropdownMenuItem
@@ -204,11 +199,9 @@ export default function PlatformUsersPage() {
                                                 )}
                                                 <DropdownMenuItem
                                                     className="text-destructive cursor-pointer"
-                                                    onClick={() => {
-                                                        if (confirm(`Delete user ${u.email}? This cannot be undone.`)) {
-                                                            deleteMutation.mutate(u.id);
-                                                        }
-                                                    }}
+                                                    onClick={() =>
+                                                        setDeleteTarget({ id: u.id, email: u.email })
+                                                    }
                                                 >
                                                     <Trash2 className="h-4 w-4 mr-2" /> Delete User
                                                 </DropdownMenuItem>
@@ -228,6 +221,25 @@ export default function PlatformUsersPage() {
                     </Table>
                 )}
             </Card>
+
+            <ConfirmDialog
+                open={!!deleteTarget}
+                onOpenChange={(open) => !open && setDeleteTarget(null)}
+                title="Delete user?"
+                description={
+                    deleteTarget
+                        ? `${deleteTarget.email} will be permanently deleted. This cannot be undone.`
+                        : undefined
+                }
+                confirmLabel="Delete"
+                loading={deleteMutation.isPending}
+                onConfirm={() => {
+                    if (deleteTarget) {
+                        deleteMutation.mutate(deleteTarget.id);
+                        setDeleteTarget(null);
+                    }
+                }}
+            />
         </div>
     );
 }

@@ -5,7 +5,6 @@ import { apiClient } from "@/lib/api-client";
 import { AuditLogEntry } from "@/lib/types";
 import {
     Search,
-    Filter,
     Clock,
     Activity,
     ArrowRight,
@@ -26,14 +25,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useMemo, useState } from "react";
+import { normalizeAuditLogs } from "@/lib/audit";
+import { AuditLogDetailsDialog } from "@/components/audit/audit-log-details-dialog";
 
 export default function PlatformAuditPage() {
+    const [searchTerm, setSearchTerm] = useState("");
+    const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
+    const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+
     // 1. Fetch Audit Logs
     const { data: logs, isLoading } = useQuery<AuditLogEntry[]>({
         queryKey: ["globalAudit"],
         queryFn: async () => {
             const { data } = await apiClient.get<AuditLogEntry[]>("/platform/audit-logs");
-            return data;
+            return normalizeAuditLogs(data);
         },
     });
 
@@ -42,6 +48,29 @@ export default function PlatformAuditPage() {
         if (action.includes("delete") || action.includes("remove") || action.includes("fail")) return "text-destructive border-destructive/20 bg-destructive/5";
         if (action.includes("update") || action.includes("change")) return "text-blue-500 border-blue-500/20 bg-blue-500/5";
         return "text-muted-foreground border-muted bg-muted/5";
+    };
+
+    const filteredLogs = useMemo(() => {
+        const term = searchTerm.trim().toLowerCase();
+        if (!term) return logs ?? [];
+
+        return (logs ?? []).filter((log) =>
+            log.action?.toLowerCase().includes(term) ||
+            log.actor_id?.toLowerCase().includes(term) ||
+            log.ip_address?.toLowerCase().includes(term) ||
+            log.resource?.toLowerCase().includes(term) ||
+            log.resource_type?.toLowerCase().includes(term) ||
+            log.resource_id?.toLowerCase().includes(term) ||
+            log.target_user_id?.toLowerCase().includes(term) ||
+            log.status?.toLowerCase().includes(term) ||
+            log.tenant_id?.toLowerCase().includes(term) ||
+            log.user_agent?.toLowerCase().includes(term)
+        );
+    }, [logs, searchTerm]);
+
+    const openDetails = (log: AuditLogEntry) => {
+        setSelectedLog(log);
+        setIsDetailsOpen(true);
     };
 
     return (
@@ -61,11 +90,13 @@ export default function PlatformAuditPage() {
             <div className="flex items-center gap-4">
                 <div className="relative flex-1 max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search logs by action, user, or IP..." className="pl-10" />
+                    <Input
+                        placeholder="Search logs by action, user, or IP..."
+                        className="pl-10"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                 </div>
-                <Button variant="outline" size="icon" className="shrink-0">
-                    <Filter className="h-4 w-4" />
-                </Button>
             </div>
 
             <Card className="shadow-sm border-muted overflow-hidden">
@@ -85,16 +116,16 @@ export default function PlatformAuditPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {logs?.map((log) => (
+                            {filteredLogs.map((log) => (
                                 <TableRow key={log.id} className="group transition-colors">
                                     <TableCell>
                                         <div className="space-y-1">
                                             <Badge variant="outline" className={getActionColor(log.action)}>
                                                 {log.action.replace(/_/g, ' ')}
                                             </Badge>
-                                            {log.resource_type && (
+                                            {(log.resource ?? log.resource_type) && (
                                                 <p className="text-[10px] text-muted-foreground lowercase ml-1">
-                                                    on {log.resource_type}
+                                                    on {log.resource ?? log.resource_type}
                                                 </p>
                                             )}
                                         </div>
@@ -118,16 +149,24 @@ export default function PlatformAuditPage() {
                                         </div>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 opacity-70 group-hover:opacity-100 transition-opacity"
+                                            title="View details"
+                                            onClick={() => openDetails(log)}
+                                        >
                                             <ArrowRight className="h-4 w-4" />
                                         </Button>
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {(!logs || logs.length === 0) && (
+                            {filteredLogs.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                                        No audit logs found.
+                                        {searchTerm.trim()
+                                            ? "No audit logs match your search."
+                                            : "No audit logs found."}
                                     </TableCell>
                                 </TableRow>
                             )}
@@ -135,6 +174,16 @@ export default function PlatformAuditPage() {
                     </Table>
                 )}
             </Card>
+
+            <AuditLogDetailsDialog
+                log={selectedLog}
+                open={isDetailsOpen}
+                onOpenChange={(open) => {
+                    setIsDetailsOpen(open);
+                    if (!open) setSelectedLog(null);
+                }}
+                getActionColor={getActionColor}
+            />
         </div>
     );
 }

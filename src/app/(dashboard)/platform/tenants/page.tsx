@@ -4,14 +4,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { getApiErrorMessage } from "@/lib/errors";
 import { TenantResponse, UserResponse } from "@/lib/types";
+import { useRouter } from "next/navigation";
 import {
-    Globe,
     Check,
     ChevronsUpDown,
     Plus,
     Search,
     MoreVertical,
-    ExternalLink,
     Loader2,
     Trash2,
     Pencil,
@@ -51,10 +50,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useState } from "react";
 
-interface TenantListItem extends TenantResponse {
-    created_at?: string;
-    owner?: Pick<UserResponse, "id" | "email" | "first_name" | "last_name">;
-}
+type TenantListItem = TenantResponse;
 
 interface TenantPayload {
     name: string;
@@ -65,6 +61,7 @@ interface TenantPayload {
 
 export default function PlatformTenantsPage() {
     const queryClient = useQueryClient();
+    const router = useRouter();
     const [isAdding, setIsAdding] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -150,7 +147,11 @@ export default function PlatformTenantsPage() {
     // 4. Update Tenant
     const updateMutation = useMutation({
         mutationFn: async ({ id, payload }: { id: string; payload: TenantPayload }) => {
-            await apiClient.put(`/platform/tenants/${id}`, payload);
+            await apiClient.put(`/platform/tenants/${id}`, {
+                name: payload.name,
+                description: payload.description,
+                owner_id: payload.owner_id,
+            });
         },
         onSuccess: () => {
             toast.success("Organization updated successfully");
@@ -178,19 +179,6 @@ export default function PlatformTenantsPage() {
             toast.error(getApiErrorMessage(error, "Failed to delete organization"));
         }
     });
-
-    const openEditDialog = (tenant: TenantListItem) => {
-        setEditingTenant(tenant);
-        setEditForm({
-            name: tenant.name,
-            description: tenant.description || "",
-            type: tenant.type,
-            owner_id: tenant.owner_id || ""
-        });
-        const owner = users?.find((u) => u.id === tenant.owner_id);
-        setEditSelectedUser(owner || null);
-        setIsEditing(true);
-    };
 
     const openDeleteDialog = (tenant: TenantListItem) => {
         setDeletingTenant(tenant);
@@ -237,17 +225,6 @@ export default function PlatformTenantsPage() {
                                     value={newTenant.description}
                                     onChange={(e) => setNewTenant({ ...newTenant, description: e.target.value })}
                                 />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium">Tenant Type</label>
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                    value={newTenant.type}
-                                    onChange={(e) => setNewTenant({ ...newTenant, type: e.target.value })}
-                                >
-                                    <option value="CUSTOMER">Customer</option>
-                                    <option value="PLATFORM">Platform</option>
-                                </select>
                             </div>
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Organization Owner</label>
@@ -357,14 +334,13 @@ export default function PlatformTenantsPage() {
                         </div>
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Tenant Type</label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                value={editForm.type}
-                                onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
-                            >
-                                <option value="CUSTOMER">Customer</option>
-                                <option value="PLATFORM">Platform</option>
-                            </select>
+                            {editingTenant?.type === "PLATFORM" ? (
+                                <p className="text-sm text-muted-foreground py-2">
+                                    System platform tenant (cannot be changed)
+                                </p>
+                            ) : (
+                                <p className="text-sm text-muted-foreground py-2">Customer organization</p>
+                            )}
                         </div>
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Owner</label>
@@ -528,25 +504,23 @@ export default function PlatformTenantsPage() {
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
                                                 <DropdownMenuLabel>Tenant Admin</DropdownMenuLabel>
-                                                <DropdownMenuItem className="cursor-pointer">
-                                                    <Globe className="h-4 w-4 mr-2" /> View Dashboard
-                                                </DropdownMenuItem>
                                                 <DropdownMenuItem
                                                     className="cursor-pointer"
-                                                    onClick={() => openEditDialog(t)}
+                                                    onClick={() => router.push(`/platform/tenants/${t.id}`)}
                                                 >
-                                                    <Pencil className="h-4 w-4 mr-2" /> Edit Organization
+                                                    <Pencil className="h-4 w-4 mr-2" /> View / Edit
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem className="cursor-pointer">
-                                                    <ExternalLink className="h-4 w-4 mr-2" /> Visit Login Page
-                                                </DropdownMenuItem>
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem
-                                                    className="text-destructive cursor-pointer"
-                                                    onClick={() => openDeleteDialog(t)}
-                                                >
-                                                    <Trash2 className="h-4 w-4 mr-2" /> Delete Tenant
-                                                </DropdownMenuItem>
+                                                {t.type !== "PLATFORM" && (
+                                                    <>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuItem
+                                                            className="text-destructive cursor-pointer"
+                                                            onClick={() => openDeleteDialog(t)}
+                                                        >
+                                                            <Trash2 className="h-4 w-4 mr-2" /> Delete Tenant
+                                                        </DropdownMenuItem>
+                                                    </>
+                                                )}
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </TableCell>

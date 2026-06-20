@@ -43,6 +43,8 @@ export default function PlatformRolesPage() {
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingRole, setEditingRole] = useState<Role | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deletingRole, setDeletingRole] = useState<Role | null>(null);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -71,8 +73,8 @@ export default function PlatformRolesPage() {
     });
 
     // Derived
-    const platformRoles = roles.filter((r) => r.scope === "PLATFORM");
-    const tenantRoles = roles.filter((r) => r.scope === "TENANT");
+    const platformRoles = roles.filter((r) => r.scope === "PLATFORM" && !r.is_template);
+    const tenantRoles = roles.filter((r) => r.scope === "TENANT" && r.is_template);
 
     // Filtered permissions based on tab/scope
     const availablePerms = useMemo(() => {
@@ -85,7 +87,6 @@ export default function PlatformRolesPage() {
     }, [permissions, formData.scope]);
 
     const handleOpenCreate = () => {
-        toast.info("Opening role creation...");
         setEditingRole(null);
         setFormData({
             name: "",
@@ -98,7 +99,6 @@ export default function PlatformRolesPage() {
     };
 
     const handleOpenEdit = (role: Role) => {
-        toast.info(`Editing role: ${role.name}`);
         setEditingRole(role);
         setFormData({
             name: role.name,
@@ -137,6 +137,8 @@ export default function PlatformRolesPage() {
         },
         onSuccess: () => {
             toast.success("Role deleted!");
+            setIsDeleting(false);
+            setDeletingRole(null);
             queryClient.invalidateQueries({ queryKey: ["globalRoles"] });
         },
         onError: (err: unknown) => {
@@ -164,76 +166,76 @@ export default function PlatformRolesPage() {
         });
     };
 
-    const isSystemRole = (name: string) => ["SUPER_ADMIN", "PLATFORM_ADMIN", "TENANT_OWNER"].includes(name);
+    const openDeleteDialog = (role: Role) => {
+        setDeletingRole(role);
+        setIsDeleting(true);
+    };
 
     const renderRoleCard = (role: Role) => (
-        <Card key={role.id} className="shadow-sm border-muted flex flex-col h-full">
-            <CardHeader className="pb-2 flex-none">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+        <Card key={role.id} className="shadow-sm border-muted flex flex-col h-full overflow-hidden min-w-0 gap-4">
+            <CardHeader className="pb-0 flex-none gap-3">
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                         <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-widest bg-primary/5 text-primary border-primary/10">
                             {role.scope}
                         </Badge>
-                        {isSystemRole(role.name) && (
+                        {role.is_system_role && (
                             <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-widest">
                                 SYSTEM
                             </Badge>
                         )}
                     </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                        Lvl {role.level}
+                    </Badge>
                 </div>
-                <CardTitle className="text-lg mt-2 truncate" title={role.name}>{role.name}</CardTitle>
-                <CardDescription className="text-xs line-clamp-2 min-h-[32px]">
+                <CardTitle className="text-base truncate" title={role.name}>{role.name}</CardTitle>
+                <CardDescription className="text-xs line-clamp-2">
                     {role.description || "No description provided."}
                 </CardDescription>
             </CardHeader>
-            <CardContent className="pt-2 flex-grow space-y-4">
-                <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                        <ShieldCheck className="h-3 w-3" /> Permissions
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                        {!role.permissions?.length && (
-                            <span className="text-xs text-muted-foreground italic">None assigned</span>
-                        )}
-                        {role.permissions?.slice(0, 5).map((p) => (
-                            <Badge key={p.id} variant="secondary" className="text-[9px] px-1.5 py-0 truncate max-w-full">
-                                {p.name}
-                            </Badge>
-                        ))}
-                        {role.permissions?.length > 5 && (
-                            <Badge variant="ghost" className="text-[9px] px-1.5 py-0">
-                                +{role.permissions.length - 5} more
-                            </Badge>
-                        )}
-                    </div>
-                </div>
-                <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Level</p>
-                    <p className="text-sm">{role.level}</p>
-                </div>
-            </CardContent>
-            <div className="px-6 py-3 bg-muted/30 border-t border-muted flex justify-between items-center mt-auto flex-none">
-                <span className="text-[10px] text-muted-foreground" title={role.id}>{role.id.slice(0, 8)}...</span>
-                <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => handleOpenEdit(role)}>
-                        <Edit className="mr-1.5 h-3 w-3" /> Edit
-                    </Button>
-                    {!isSystemRole(role.name) && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs px-2 text-red-500 hover:text-red-600 hover:bg-red-50"
-                            onClick={() => {
-                                if (confirm("Are you sure you want to delete this role?")) {
-                                    deleteMutation.mutate(role.id);
-                                }
-                            }}
-                            disabled={deleteMutation.isPending}
-                        >
-                            <Trash2 className="mr-1.5 h-3 w-3" /> Delete
-                        </Button>
+            <CardContent className="pt-0 flex-grow space-y-2 min-w-0">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                    <ShieldCheck className="h-3 w-3" /> Permissions
+                </p>
+                <div className="flex flex-wrap gap-1">
+                    {!role.permissions?.length && (
+                        <span className="text-xs text-muted-foreground italic">None assigned</span>
+                    )}
+                    {role.permissions?.slice(0, 4).map((p) => (
+                        <Badge key={p.id} variant="secondary" className="text-[9px] px-1.5 py-0 max-w-full truncate">
+                            {p.name}
+                        </Badge>
+                    ))}
+                    {role.permissions && role.permissions.length > 4 && (
+                        <Badge variant="ghost" className="text-[9px] px-1.5 py-0">
+                            +{role.permissions.length - 4} more
+                        </Badge>
                     )}
                 </div>
+            </CardContent>
+            <div className="px-4 py-2.5 bg-muted/30 border-t border-muted flex items-center justify-end gap-1 mt-auto flex-none shrink-0">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    title="Edit role"
+                    onClick={() => handleOpenEdit(role)}
+                >
+                    <Edit className="h-4 w-4" />
+                </Button>
+                {!role.is_system_role && (
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                        title="Delete role"
+                        onClick={() => openDeleteDialog(role)}
+                        disabled={deleteMutation.isPending}
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                )}
             </div>
         </Card>
     );
@@ -245,7 +247,7 @@ export default function PlatformRolesPage() {
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight">Roles & Permissions</h1>
                         <p className="text-muted-foreground mt-1">
-                            Define platform and tenant roles across the system.
+                            Manage platform roles and default tenant role templates.
                         </p>
                     </div>
                     <DialogTrigger asChild>
@@ -262,24 +264,24 @@ export default function PlatformRolesPage() {
                 ) : (
                     <Tabs defaultValue="tenant" className="space-y-6">
                         <TabsList className="bg-muted w-full justify-start overflow-x-auto">
-                            <TabsTrigger value="tenant" className="w-[150px]">Tenant Roles</TabsTrigger>
+                            <TabsTrigger value="tenant" className="w-[150px]">Tenant Templates</TabsTrigger>
                             <TabsTrigger value="platform" className="w-[150px]">Platform Roles</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="tenant" className="m-0 border-none outline-none">
-                            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                                 {tenantRoles.map(renderRoleCard)}
                             </div>
                             {tenantRoles.length === 0 && (
                                 <div className="py-20 text-center text-muted-foreground flex flex-col items-center">
                                     <AlertCircle className="h-10 w-10 mb-2 opacity-50" />
-                                    <p>No tenant roles found.</p>
+                                    <p>No tenant role templates found.</p>
                                 </div>
                             )}
                         </TabsContent>
 
                         <TabsContent value="platform" className="m-0 border-none outline-none">
-                            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                                 {platformRoles.map(renderRoleCard)}
                             </div>
                             {platformRoles.length === 0 && (
@@ -292,8 +294,8 @@ export default function PlatformRolesPage() {
                     </Tabs>
                 )}
 
-                <DialogContent className="sm:max-w-[600px] overflow-y-auto">
-                    <DialogHeader>
+                <DialogContent className="sm:max-w-[600px] max-h-[min(90vh,800px)] flex flex-col gap-0 p-0 overflow-hidden">
+                    <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
                         <DialogTitle>{editingRole ? "Edit Role" : "Create Role"}</DialogTitle>
                         <DialogDescription>
                             {editingRole
@@ -302,8 +304,7 @@ export default function PlatformRolesPage() {
                         </DialogDescription>
                     </DialogHeader>
 
-
-                    <div className="space-y-4 py-4">
+                    <div className="space-y-4 px-6 pb-4 overflow-y-auto flex-1 min-h-0">
                         <div className="space-y-2">
                             <Label htmlFor="name">Role Name <span className="text-red-500">*</span></Label>
                             <Input
@@ -311,11 +312,11 @@ export default function PlatformRolesPage() {
                                 value={formData.name}
                                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                                 placeholder="e.g. EDITOR"
-                                disabled={!!editingRole && isSystemRole(editingRole.name)}
+                                disabled={!!editingRole?.is_name_locked}
                                 className="uppercase"
                             />
-                            {editingRole && isSystemRole(editingRole.name) && (
-                                <p className="text-xs text-muted-foreground">System role names cannot be changed.</p>
+                            {editingRole?.is_name_locked && (
+                                <p className="text-xs text-muted-foreground">Platform system role names cannot be changed.</p>
                             )}
                         </div>
 
@@ -372,7 +373,7 @@ export default function PlatformRolesPage() {
                                 Only permissions matching the {formData.scope} scope (or globally accessible auth traits) can be assigned.
                             </p>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto p-1 bg-muted/20 rounded-lg">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[240px] overflow-y-auto p-1 bg-muted/20 rounded-lg">
                                 {availablePerms.map((p) => {
                                     const checked = formData.permissions.includes(p.id);
                                     return (
@@ -400,13 +401,36 @@ export default function PlatformRolesPage() {
                         </div>
                     </div>
 
-                    <DialogFooter>
+                    <DialogFooter className="px-6 py-4 border-t shrink-0">
                         <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saveMutation.isPending}>
                             Cancel
                         </Button>
                         <Button onClick={handleSubmit} disabled={saveMutation.isPending || !formData.name}>
                             {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Save Role
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={isDeleting} onOpenChange={setIsDeleting}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Role</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete <strong>{deletingRole?.name}</strong>? This action is irreversible and may affect users assigned to this role.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsDeleting(false)}>Cancel</Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => deletingRole && deleteMutation.mutate(deletingRole.id)}
+                            disabled={deleteMutation.isPending}
+                        >
+                            {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Delete Role
                         </Button>
                     </DialogFooter>
                 </DialogContent>
