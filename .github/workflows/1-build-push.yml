@@ -107,7 +107,5 @@ jobs:
           echo "**Image:** \`${{ steps.image.outputs.full }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ steps.image.outputs.full }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Next step — redeploy in Rancher" >> $GITHUB_STEP_SUMMARY
+          echo "Merge to \`main\` builds and pushes this image. Redeploy the **dashboard** workload in Rancher (or \`kubectl rollout restart deployment/dashboard -n authengine\`) to pick up \`:latest\`." >> $GITHUB_STEP_SUMMARY
