@@ -52,7 +52,9 @@ cd auth-engine-infra/compose
 docker compose up -d --build
 ```
 
-Pre-built production images and CI/CD: [Deployment guide](https://docs.authengine.org/deployment/).
+Pre-built production images: [Deployment guide](https://docs.authengine.org/deployment/).
+
+**CI/CD:** merge to `main` runs lint/build and pushes `DOCKERHUB_USERNAME/authengine-dashboard:latest`. Redeploy the `dashboard` workload in Rancher after a new image is available.
 
 ## Contributing
 
