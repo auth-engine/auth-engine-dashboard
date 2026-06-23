@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { getPublicEnv } from "@/lib/public-env";
 
 const COMPANY_SIZES = ["1–10", "11–50", "51–200", "201–1,000", "1,000+"];
 const MAU_RANGES = [
@@ -63,8 +64,7 @@ export function ContactForm() {
       return;
     }
 
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    const apiBase = getPublicEnv().API_URL || "http://localhost:8000/api/v1";
 
     setIsSubmitting(true);
     try {

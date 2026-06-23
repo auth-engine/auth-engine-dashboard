@@ -1,10 +1,9 @@
 import axios from "axios";
 import { useAuthStore } from "@/stores/auth-store";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+import { getPublicEnv } from "@/lib/public-env";
 
 export const apiClient = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: "",
     headers: {
         "Content-Type": "application/json",
     },
@@ -13,6 +12,10 @@ export const apiClient = axios.create({
 // Request Interceptor to add Access Token and Active Tenant
 apiClient.interceptors.request.use(
     (config) => {
+        if (!config.baseURL) {
+            config.baseURL = getPublicEnv().API_URL;
+        }
+
         const state = useAuthStore.getState();
         const token = state.accessToken;
         const tenantId = state.activeTenantId;
@@ -47,7 +50,7 @@ apiClient.interceptors.response.use(
             if (refreshToken) {
                 try {
                     // Note: using raw axios to avoid interceptor infinite loops
-                    const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+                    const { data } = await axios.post(`${getPublicEnv().API_URL}/auth/refresh`, {
                         refresh_token: refreshToken,
                     });
 

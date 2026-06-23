@@ -34,11 +34,8 @@ import {
     PublicTenantAuthConfig,
 } from "@/lib/types";
 import { getApiErrorMessage, isNotAllowedError } from "@/lib/errors";
-import {
-    PLATFORM_TENANT_ID,
-    PublicOAuthProvider,
-    SOCIAL_PROVIDER_META,
-} from "@/lib/social-login";
+import { getPlatformTenantId, PublicOAuthProvider, SOCIAL_PROVIDER_META } from "@/lib/social-login";
+import { getPublicEnv } from "@/lib/public-env";
 import { isWebAuthnSupported } from "@/lib/webauthn-support";
 import { LoginFormSkeleton } from "@/components/auth/login-form-skeleton";
 
@@ -243,15 +240,14 @@ function LoginPageContent() {
     }, [enrollData]);
 
     const { data: authConfig, isLoading: isLoadingAuthConfig } = useQuery<PublicTenantAuthConfig>({
-        queryKey: ["publicAuthConfig", PLATFORM_TENANT_ID],
+        queryKey: ["publicAuthConfig"],
         queryFn: async () => {
-            const { data } = await apiClient.get<PublicTenantAuthConfig>("/auth/auth-config", {
-                params: { tenant_id: PLATFORM_TENANT_ID },
-            });
+            const { data } = await apiClient.get<PublicTenantAuthConfig>("/auth/auth-config");
             return data;
         },
-        enabled: !!PLATFORM_TENANT_ID,
     });
+
+    const platformTenantId = authConfig?.tenant_id ?? getPlatformTenantId();
 
     const allowedMethods = new Set(authConfig?.allowed_methods ?? []);
     const showEmailPassword = allowedMethods.has("email_password");
@@ -265,15 +261,17 @@ function LoginPageContent() {
     const { data: socialProviders = [], isLoading: isLoadingSocialProviders } = useQuery<
         PublicOAuthProvider[]
     >({
-        queryKey: ["loginSocialProviders", PLATFORM_TENANT_ID],
+        queryKey: ["loginSocialProviders", platformTenantId],
         queryFn: async () => {
             const { data } = await apiClient.get<PublicOAuthProvider[]>(
                 "/auth/oauth/providers",
-                { params: { tenant_id: PLATFORM_TENANT_ID } }
+                platformTenantId
+                    ? { params: { tenant_id: platformTenantId } }
+                    : undefined
             );
             return data;
         },
-        enabled: !!PLATFORM_TENANT_ID && showSocial,
+        enabled: !!platformTenantId && showSocial,
     });
 
     const passwordForm = useForm<z.infer<typeof loginSchema>>({
@@ -315,7 +313,7 @@ function LoginPageContent() {
     const sendMagicLink = async (email: string) => {
         await apiClient.post("/auth/magic-link/request", {
             email,
-            tenant_id: PLATFORM_TENANT_ID || undefined,
+            tenant_id: platformTenantId || undefined,
         });
     };
 
@@ -323,7 +321,7 @@ function LoginPageContent() {
         mutationFn: async (values: { email: string; password: string }) => {
             const { data } = await apiClient.post("/auth/login", {
                 ...values,
-                tenant_id: PLATFORM_TENANT_ID || undefined,
+                tenant_id: platformTenantId || undefined,
             });
             return data;
         },
@@ -446,7 +444,7 @@ function LoginPageContent() {
 
         try {
             const { data } = await apiClient.post("/auth/webauthn/authenticate/begin", {
-                tenant_id: PLATFORM_TENANT_ID || undefined,
+                tenant_id: platformTenantId || undefined,
             });
 
             const assertion = await startAuthentication({ optionsJSON: data.options });
@@ -465,7 +463,7 @@ function LoginPageContent() {
                             userHandle: assertion.response.userHandle,
                         },
                     },
-                    tenant_id: PLATFORM_TENANT_ID || undefined,
+                    tenant_id: platformTenantId || undefined,
                 }
             );
 
@@ -482,7 +480,7 @@ function LoginPageContent() {
     };
 
     const handleSocialLogin = (provider: string, tenantId: string) => {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+        const baseUrl = getPublicEnv().API_URL;
         const params = new URLSearchParams({ tenant_id: tenantId });
         window.location.href = `${baseUrl}/auth/oauth/${provider}/login?${params.toString()}`;
     };
