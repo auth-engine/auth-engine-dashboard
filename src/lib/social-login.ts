@@ -6,7 +6,7 @@ export interface PublicOAuthProvider {
     tenant_id: string;
 }
 
-export const PLATFORM_TENANT_ID = process.env.NEXT_PUBLIC_PLATFORM_TENANT_ID || "";
+export { getPlatformTenantId } from "@/lib/public-env";
 
 export const SOCIAL_PROVIDER_META: Record<
     string,
