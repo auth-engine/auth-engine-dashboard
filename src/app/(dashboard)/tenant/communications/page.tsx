@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Loader2,
@@ -48,8 +48,109 @@ import { useAuthStore } from "@/stores/auth-store";
 const PROVIDER_LABELS: Record<string, string> = {
 	sendgrid: "SendGrid",
 	ses: "AWS SES",
+	smtp: "SMTP",
+	console: "Console",
 	twilio: "Twilio",
 	android_gateway: "Android Gateway",
+};
+
+const EMAIL_PROVIDER_META: Record<
+	string,
+	{
+		credentialLabel: string;
+		credentialPlaceholder: string;
+		credentialHelp: string;
+		fromLabel: string;
+		fromPlaceholder: string;
+	}
+> = {
+	sendgrid: {
+		credentialLabel: "SendGrid API key",
+		credentialPlaceholder: "SG.xxxxx",
+		credentialHelp:
+			"Paste the SendGrid API key used to send transactional mail.",
+		fromLabel: "From email",
+		fromPlaceholder: "noreply@example.com",
+	},
+	ses: {
+		credentialLabel: "AWS SES credentials",
+		credentialPlaceholder: "access_key_id:secret_access_key",
+		credentialHelp:
+			"Use `access_key_id:secret_access_key` when storing per-tenant SES credentials.",
+		fromLabel: "From email",
+		fromPlaceholder: "noreply@example.com",
+	},
+	smtp: {
+		credentialLabel: "SMTP credentials",
+		credentialPlaceholder: "username:password@smtp.example.com:465",
+		credentialHelp:
+			"Format credentials as `username:password@host:port` to match the SMTP provider implementation.",
+		fromLabel: "From email",
+		fromPlaceholder: "noreply@example.com",
+	},
+	console: {
+		credentialLabel: "Console provider token",
+		credentialPlaceholder: "debug-token",
+		credentialHelp:
+			"Console provider is mainly for debugging. If enabled by the backend, any non-empty placeholder value is sufficient.",
+		fromLabel: "From email",
+		fromPlaceholder: "noreply@example.com",
+	},
+};
+
+const SMS_PROVIDER_META: Record<
+	string,
+	{
+		fromLabel: string;
+		fromPlaceholder: string;
+		fromHelp: string;
+		accountLabel: string;
+		accountPlaceholder: string;
+		accountHelp: string;
+		credentialLabel: string;
+		credentialPlaceholder: string;
+		credentialHelp: string;
+	}
+> = {
+	twilio: {
+		fromLabel: "From number / messaging service SID",
+		fromPlaceholder: "+15551234567 or MGxxxxxxxx",
+		fromHelp:
+			"Use a Twilio phone number or a Messaging Service SID starting with `MG`.",
+		accountLabel: "Twilio account SID",
+		accountPlaceholder: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		accountHelp: "The account SID used to authenticate Twilio API calls.",
+		credentialLabel: "Twilio auth token",
+		credentialPlaceholder: "twilio-auth-token",
+		credentialHelp: "Paste the Twilio auth token for this account.",
+	},
+	android_gateway: {
+		fromLabel: "From number / sender label",
+		fromPlaceholder: "gateway",
+		fromHelp:
+			"Used only for display/context. The Android gateway sends from the SIM configured on the device.",
+		accountLabel: "Android gateway base URL",
+		accountPlaceholder: "https://api.sms-gate.app/3rdparty/v1",
+		accountHelp:
+			"Point this to the SMS Gateway for Android host or cloud endpoint expected by the backend provider.",
+		credentialLabel: "Gateway basic auth",
+		credentialPlaceholder: "username:password",
+		credentialHelp:
+			"If your gateway is protected, store credentials as `username:password`.",
+	},
+	console: {
+		fromLabel: "From label",
+		fromPlaceholder: "console",
+		fromHelp: "Used only for debugging output.",
+		accountLabel: "Gateway / account reference",
+		accountPlaceholder: "debug-endpoint",
+		accountHelp:
+			"Optional reference shown in the UI when using the console provider.",
+		credentialLabel: "Console provider token",
+		credentialPlaceholder: "debug-token",
+		credentialHelp:
+			"Console provider is mainly for debugging. If enabled by the backend, any non-empty placeholder value is sufficient.",
+	},
 };
 
 function providerLabel(value: string) {
@@ -752,6 +853,9 @@ function EmailConfigDialog({
 	submitLabel: string;
 	showSecretHint?: boolean;
 }) {
+	const providerMeta =
+		EMAIL_PROVIDER_META[form.provider] ?? EMAIL_PROVIDER_META.sendgrid;
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent>
@@ -776,9 +880,10 @@ function EmailConfigDialog({
 						</select>
 					</div>
 					<div className="space-y-2">
-						<Label>From email</Label>
+						<Label>{providerMeta.fromLabel}</Label>
 						<Input
 							type="email"
+							placeholder={providerMeta.fromPlaceholder}
 							value={form.from_email}
 							onChange={(e) =>
 								setForm((current) => ({
@@ -791,16 +896,20 @@ function EmailConfigDialog({
 					<div className="space-y-2">
 						<Label>
 							{showSecretHint
-								? "API key (leave blank to keep current)"
-								: "API key"}
+								? `${providerMeta.credentialLabel} (leave blank to keep current)`
+								: providerMeta.credentialLabel}
 						</Label>
 						<Input
 							type="password"
+							placeholder={providerMeta.credentialPlaceholder}
 							value={form.api_key}
 							onChange={(e) =>
 								setForm((current) => ({ ...current, api_key: e.target.value }))
 							}
 						/>
+						<p className="text-[10px] text-muted-foreground">
+							{providerMeta.credentialHelp}
+						</p>
 					</div>
 				</div>
 				<DialogFooter>
@@ -842,10 +951,8 @@ function SmsConfigDialog({
 	submitLabel: string;
 	showSecretHint?: boolean;
 }) {
-	const providerRequiresAccountSid = useMemo(
-		() => form.provider !== "android_gateway",
-		[form.provider],
-	);
+	const providerMeta =
+		SMS_PROVIDER_META[form.provider] ?? SMS_PROVIDER_META.android_gateway;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -871,8 +978,9 @@ function SmsConfigDialog({
 						</select>
 					</div>
 					<div className="space-y-2">
-						<Label>From number / sender id</Label>
+						<Label>{providerMeta.fromLabel}</Label>
 						<Input
+							placeholder={providerMeta.fromPlaceholder}
 							value={form.from_number}
 							onChange={(e) =>
 								setForm((current) => ({
@@ -881,13 +989,12 @@ function SmsConfigDialog({
 								}))
 							}
 						/>
+						<p className="text-[10px] text-muted-foreground">
+							{providerMeta.fromHelp}
+						</p>
 					</div>
 					<div className="space-y-2">
-						<Label>
-							{providerRequiresAccountSid
-								? "Twilio account SID"
-								: "Gateway URL"}
-						</Label>
+						<Label>{providerMeta.accountLabel}</Label>
 						<Input
 							value={form.account_sid}
 							onChange={(e) =>
@@ -896,26 +1003,29 @@ function SmsConfigDialog({
 									account_sid: e.target.value,
 								}))
 							}
-							placeholder={
-								providerRequiresAccountSid
-									? "ACxxxxxxxx"
-									: "https://api.sms-gate.app/3rdparty/v1"
-							}
+							placeholder={providerMeta.accountPlaceholder}
 						/>
+						<p className="text-[10px] text-muted-foreground">
+							{providerMeta.accountHelp}
+						</p>
 					</div>
 					<div className="space-y-2">
 						<Label>
 							{showSecretHint
-								? "API key / auth token (leave blank to keep current)"
-								: "API key / auth token"}
+								? `${providerMeta.credentialLabel} (leave blank to keep current)`
+								: providerMeta.credentialLabel}
 						</Label>
 						<Input
 							type="password"
+							placeholder={providerMeta.credentialPlaceholder}
 							value={form.api_key}
 							onChange={(e) =>
 								setForm((current) => ({ ...current, api_key: e.target.value }))
 							}
 						/>
+						<p className="text-[10px] text-muted-foreground">
+							{providerMeta.credentialHelp}
+						</p>
 					</div>
 				</div>
 				<DialogFooter>
